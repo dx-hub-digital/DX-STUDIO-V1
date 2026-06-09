@@ -1,0 +1,825 @@
+:root{
+  --bg: #0b1020;
+  --panel: rgba(255,255,255,.04);
+  --panel2: rgba(255,255,255,.06);
+  --border: rgba(255,255,255,.10);
+  --text: rgba(255,255,255,.92);
+  --muted: rgba(255,255,255,.65);
+  --accent: #7c5cff;
+  --accent2: #2de2a6;
+  --danger: #ff4d6d;
+  --shadow: 0 12px 30px rgba(0,0,0,.35);
+  --editor-font-size: 14px;
+}
+
+*{ box-sizing: border-box; }
+html,body{ height:100%; }
+body{
+  margin:0;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Noto Sans";
+  background: radial-gradient(1200px 800px at 20% 10%, rgba(124,92,255,.25), transparent 55%),
+              radial-gradient(900px 600px at 80% 0%, rgba(45,226,166,.18), transparent 55%),
+              var(--bg);
+  color: var(--text);
+}
+
+/* Scrollbar Customizada - Estilo DX Studio */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--accent);
+}
+
+.topbar{
+  position: sticky;
+  top:0;
+  z-index: 20;
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  background: rgba(6,10,22,.72);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
+}
+
+.brand{ display:flex; align-items:center; gap:10px; }
+.dot{
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--accent), #4a2cff);
+  box-shadow: 0 0 0 4px rgba(124,92,255,.18);
+}
+.title{ font-weight: 800; letter-spacing: .2px; }
+
+.actions{ display:flex; align-items:center; gap:10px; flex-wrap: wrap; justify-content:flex-end; }
+
+.select{ display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid var(--border); background: var(--panel); border-radius: 12px; }
+.select label, .select span{ color: var(--muted); font-size: 12px; }
+select{
+  background: transparent;
+  color: var(--text);
+  border: none;
+  outline: none;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn{
+  border:1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  padding: 10px 12px;
+  border-radius: 12px;
+  cursor:pointer;
+  font-weight: 800;
+  letter-spacing: .2px;
+}
+.btn.primary{ background: linear-gradient(180deg, rgba(124,92,255,.28), rgba(124,92,255,.12)); border-color: rgba(124,92,255,.45); }
+.btn.danger{ background: linear-gradient(180deg, rgba(255,77,109,.18), rgba(255,77,109,.08)); border-color: rgba(255,77,109,.45); }
+.btn.btn-success {
+  background: linear-gradient(180deg, rgba(45,226,166,.28), rgba(45,226,166,.12));
+  border-color: rgba(45,226,166,.45);
+}
+.btn:hover{ transform: translateY(-1px); box-shadow: var(--shadow); }
+.btn:active{ transform: translateY(0px); box-shadow:none; }
+
+.btn.tiny{ padding:6px 10px; border-radius: 10px; font-size: 12px; font-weight: 800; }
+
+.layout{
+  display: flex;
+  flex-direction: row;
+  padding: 0;
+  height: calc(100vh - 64px);
+  overflow: hidden;
+  gap: 0;
+  background: var(--bg);
+}
+
+/* Barra de Atividades (Ícones da Esquerda) */
+.activity-bar {
+  width: 50px;
+  min-width: 50px;
+  background: #181818;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 15px;
+  gap: 25px;
+  border-right: 1px solid var(--border);
+  color: var(--muted);
+}
+.activity-bar i { cursor: pointer; font-size: 20px; transition: color 0.2s; }
+.activity-bar i:hover, .activity-bar i.active { color: var(--accent); }
+
+/* Sidebar (Explorador) */
+.sidebar {
+  width: 250px;
+  min-width: 0;
+  background: #252526;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.sidebar-header { padding: 12px 15px; font-size: 11px; font-weight: 800; text-transform: uppercase; color: var(--muted); }
+.sidebar-search { padding: 0 10px 10px; }
+#sidebarSearchInput { width: 100%; background: #3c3c3c; border: 1px solid var(--border); color: #fff; padding: 5px; border-radius: 4px; font-size: 12px; }
+
+.sidebar-section-title {
+  padding: 10px 15px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  background: rgba(0,0,0,0.1);
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid var(--border);
+}
+
+.open-files-list { display: flex; flex-direction: column; }
+.open-file-item {
+  padding: 6px 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--muted);
+}
+.open-file-item:hover, .open-file-item.active { background: var(--panel2); color: #fff; }
+
+/* Divisores de Redimensionamento */
+.resizer-s { width: 4px; cursor: col-resize; background: rgba(255,255,255,0.02); transition: 0.2s; }
+.resizer-s:hover, .resizer-h:hover { background: var(--accent); }
+
+.resizer-h {
+  width: 6px;
+  cursor: col-resize;
+  background: #1e1e1e;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+
+.tab-bar-resizer-v {
+  height: 4px;
+  width: 100%;
+  cursor: row-resize;
+  position: absolute;
+  bottom: 0;
+  z-index: 10;
+}
+
+.tab-bar-resizer-v:hover {
+  background: var(--accent);
+}
+
+.resizer-v {
+  height: 6px;
+  cursor: row-resize;
+  background: #1e1e1e;
+  border-top: 1px solid var(--border);
+}
+
+.resizer-v:hover {
+  background: var(--accent);
+}
+
+.editorPanel, .previewPanel {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  border-radius: 0;
+  overflow: hidden;
+  display:flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.editorPanel { flex: 1.2; }
+.previewPanel { flex: 0.8; }
+
+/* Layout quando o preview está fechado */
+.layout.preview-closed .previewPanel, 
+.layout.preview-closed .resizer-h {
+  display: none;
+}
+.layout.preview-closed .editorPanel { flex: 1; }
+
+/* Garante que o editor único ocupe todo o espaço quando ativo */
+.editorPanel > #editor.active {
+  display: block;
+  flex: 1;
+}
+
+.tab-bar {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  background: #1e1e1e;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+}
+
+.tabs-container { display: flex; }
+
+.tab {
+  padding: 8px 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-right: 1px solid var(--border);
+  background: #2d2d2d;
+  color: var(--muted);
+  position: relative;
+  transition: background 0.2s;
+}
+
+.tab.active {
+  background: var(--bg);
+  color: #fff;
+  border-bottom: 2px solid var(--accent);
+}
+
+/* Alças de esticar abas */
+.tab-resizer-h, .tab-resizer-l {
+  position: absolute;
+  top: 0; width: 6px; height: 100%;
+  cursor: col-resize; z-index: 5;
+}
+.tab-resizer-h { right: 0; } .tab-resizer-l { left: 0; }
+
+.tab-resizer-h:hover, .tab-resizer-l:hover {
+  background: var(--accent);
+}
+
+.tab.dragging {
+  opacity: 0.5;
+  border: 1px dashed var(--accent);
+}
+
+.tab.drop-target-left {
+  border-left: 2px solid var(--accent2);
+}
+
+.tab.drop-target-right {
+  border-right: 2px solid var(--accent2);
+}
+
+.tab:focus { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.tab .close-tab {
+  margin-left: 10px;
+  font-size: 10px;
+  opacity: 0.5;
+  transition: opacity 0.2s;
+  background: none;
+  border: none;
+  padding: 4px;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+.tab .close-tab:hover {
+  opacity: 1;
+  color: var(--danger);
+}
+
+.tab-add {
+  padding: 0 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  background: #1e1e1e;
+  color: var(--muted);
+  border: none;
+  border-right: 1px solid var(--border);
+  font-family: inherit;
+  height: 100%;
+}
+
+.tab-add:hover {
+  background: var(--panel2);
+  color: #fff;
+}
+
+/* Medidor de Memória */
+.storage-meter { margin-bottom: 25px; padding: 15px; background: var(--panel); border-radius: 12px; border: 1px solid var(--border); }
+.storage-header { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 8px; color: var(--muted); }
+.storage-progress { height: 6px; background: rgba(0,0,0,0.3); border-radius: 10px; overflow: hidden; }
+.storage-bar { height: 100%; width: 0%; background: var(--accent); transition: width 0.5s, background 0.3s; }
+.storage-bar.warning { background: #f1c40f; }
+.storage-bar.critical { background: var(--danger); }
+
+/* Menu de Contexto */
+.context-menu {
+  position: fixed;
+  display: none;
+  background: #252526;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  border-radius: 8px;
+  padding: 5px 0;
+  z-index: 2000;
+  min-width: 150px;
+}
+
+/* Estilos para a Árvore de Objetos JSON no Console */
+.json-tree {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  margin: 5px 0;
+}
+.json-key { color: var(--accent2); font-weight: bold; }
+.json-val { color: #ce9178; }
+.json-tree details summary {
+  cursor: pointer;
+  color: var(--accent);
+  outline: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.json-tree details summary:hover { color: #fff; }
+
+/* Destaque de Pesquisa (Sidebar e Console) */
+.search-highlight {
+  background: rgba(255, 255, 0, 0.3);
+  color: #fff;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* Marcador de Breakpoint no Editor */
+.cm-breakpoint { color: var(--danger); cursor: pointer; text-align: center; }
+
+.menu-item {
+  padding: 8px 15px; font-size: 13px; color: var(--text); cursor: pointer; display: flex; align-items: center; gap: 10px;
+}
+.menu-item:hover { background: var(--accent); }
+
+/* Estilo do Diálogo de Busca (Ctrl+F) */
+.CodeMirror-dialog {
+  background: #252526 !important;
+  color: #ccc !important;
+  padding: 8px !important;
+  border-bottom: 1px solid var(--border) !important;
+}
+
+.CodeMirror-dialog input {
+  background: #3c3c3c !important;
+  color: #fff !important;
+  border: 1px solid var(--border) !important;
+  outline: none !important;
+  padding: 2px 4px !important;
+}
+
+.tab:hover:not(.active) {
+  background: var(--panel2);
+}
+
+/* Alinhamento horizontal garantido para os botões do console */
+.console-header-controls, .console-header-buttons {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+}
+
+/* Destaca a aba de configurações com um fundo sutil */
+.tab[data-mode="settings"] {
+  background: rgba(124, 92, 255, 0.1);
+}
+
+#editorSettings {
+  overflow-y: auto;
+}
+
+/* Cores dos Ícones das Abas */
+.tab i { font-size: 14px; }
+.tab[data-mode="htmlmixed"] i { color: #e34f26; } /* Laranja HTML */
+.tab[data-mode="css"] i { color: #1572b6; }      /* Azul CSS */
+.tab[data-mode="javascript"] i { color: #f7df1e; } /* Amarelo JS */
+.tab[data-mode="php"] i { color: #777bb4; }       /* Roxo PHP */
+.tab[data-mode="python"] i { color: #3776ab; }    /* Azul Python */
+.tab[data-mode="settings"] i { color: #858585; }  /* Cinza Config */
+
+.panelHeader{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
+  font-weight: 900;
+}
+
+.panel-header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 10px;
+  flex-wrap: wrap; /* Permite que os itens quebrem linha em telas menores */
+}
+
+.panel-header-main, .panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap; /* Garante que os grupos de botões também quebrem linha */
+}
+
+.hint{ color: var(--muted); font-size: 12px; font-weight: 700; }
+
+#editor{ flex:1; min-height: 0; }
+
+.singleEditor {
+  display: none;
+  height: 100%;
+  width: 100%;
+  flex: 1;
+}
+.singleEditor.active { display: block; }
+
+.settings-group {
+  margin-bottom: 20px;
+}
+.settings-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.settings-group select {
+  width: 100%;
+  max-width: 300px;
+}
+
+.settings-textarea {
+  width: 100%;
+  max-width: 500px;
+  min-height: 80px;
+  background: #1e1e1e;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 10px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  resize: vertical;
+  outline: none;
+}
+.settings-textarea:focus { border-color: var(--accent); }
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 250px;
+  overflow-y: auto;
+  padding-right: 5px;
+  margin-top: 10px;
+}
+.history-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--panel);
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  font-size: 12px;
+}
+.history-item:hover { background: var(--panel2); }
+
+/* Removemos a altura fixa para que o editor ativo ocupe tudo */
+.fileEditors .editor { 
+  height: 100%; 
+  min-height: 0; 
+}
+
+.fileRow{
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255,255,255,.02);
+  font-weight: 900;
+  font-size: 12px;
+}
+.fileName{ color: rgba(255,255,255,.9); }
+.fileLang{ color: var(--muted); font-weight: 800; }
+
+/* CodeMirror deve ocupar espaço */
+.editor .CodeMirror{ 
+  height: 100%; 
+  font-size: var(--editor-font-size); 
+}
+
+
+.statusbar{
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(0,0,0,0.1);
+}
+
+.statusbar-left {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.autosave-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 0.3s;
+  color: var(--accent2);
+  font-weight: 700;
+}
+
+.autosave-status.active {
+  opacity: 1;
+}
+
+.cloud-icon.syncing {
+  animation: cloudPulse 1.5s infinite;
+}
+
+@keyframes cloudPulse {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.1); opacity: 0.6; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.previewPanel{ padding: 0; }
+
+.consoleWrap{
+  padding: 0;
+  display:flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.consoleHeader{
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 900;
+  flex-wrap: wrap; /* Permite que os botões do console se organizem melhor */
+  gap: 10px;
+}
+
+.console{
+  margin: 0;
+  padding: 12px 14px;
+  max-height: 180px;
+  overflow:auto;
+  background: rgba(0,0,0,.18);
+  border-bottom: 1px solid var(--border);
+  color: rgba(255,255,255,.88);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  transition: background 0.3s, color 0.3s, max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.3s;
+}
+
+/* Estilos para links de erro e avisos no console (injetados pelo JS) */
+.console-error-line-link {
+  color: var(--danger);
+  text-decoration: underline;
+  margin: 0 5px;
+  font-weight: bold;
+}
+.console-error-line-link:hover {
+  color: #ff8095;
+}
+
+.console-code-frame {
+  display: block;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 4px 8px;
+  border-radius: 4px;
+  margin-top: 4px;
+  border-left: 3px solid var(--danger);
+  color: var(--muted);
+}
+
+/* Estilos para as calhas de erro no CodeMirror (Gutters) */
+.cm-error-gutter-marker { color: var(--danger); width: 12px; padding-left: 2px; }
+.cm-warn-gutter-marker { color: #ffc107; width: 12px; padding-left: 2px; }
+
+.error-line-highlight { background: rgba(255, 77, 109, 0.15) !important; }
+.warn-line-highlight { background: rgba(255, 193, 7, 0.1) !important; }
+
+
+.console-time {
+  opacity: 0.6;
+  margin-right: 8px;
+}
+
+.console-counters {
+  display: flex;
+  gap: 5px;
+}
+
+.badge-count {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: var(--panel2);
+  color: var(--muted);
+  font-weight: 800;
+  min-width: 18px;
+  text-align: center;
+}
+.badge-count.log { background: rgba(255,255,255,0.1); }
+.badge-count.warn { background: rgba(255, 193, 7, 0.2); color: #ffc107; }
+.badge-count.error { background: rgba(255, 77, 109, 0.2); color: var(--danger); }
+
+@keyframes consoleErrorBlink {
+  0% { background-color: rgba(255, 77, 109, 0); }
+  50% { background-color: rgba(255, 77, 109, 0.25); }
+  100% { background-color: rgba(255, 77, 109, 0); }
+}
+.console-error-blink { animation: consoleErrorBlink 0.5s ease-in-out; }
+
+.console.minimized {
+  max-height: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  border-bottom: none !important;
+}
+
+.console.expanded {
+  max-height: 350px;
+  border-bottom-color: var(--danger);
+}
+
+/* Temas do Console */
+.consoleWrap[data-theme="dracula"] .console { background: #282a36; color: #f8f8f2; }
+.consoleWrap[data-theme="monokai"] .console { background: #272822; color: #f8f8f2; }
+.consoleWrap[data-theme="nord"] .console { background: #2e3440; color: #d8dee9; }
+.consoleWrap[data-theme="material"] .console { background: #263238; color: #eeffff; }
+.consoleWrap[data-theme="eclipse"] .console { background: #ffffff; color: #000000; border: 1px solid #ddd; }
+
+/* Custom CodeMirror Hints (VS Code style) */
+.CodeMirror-hints {
+  background: #252526 !important;
+  border: 1px solid #454545 !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important;
+  color: #cccccc !important;
+  border-radius: 4px;
+  font-family: inherit;
+  padding: 4px 0;
+  z-index: 100;
+}
+
+.CodeMirror-hint {
+  padding: 4px 12px !important;
+  border-radius: 0 !important;
+}
+
+.CodeMirror-hint-active {
+  background-color: #094771 !important;
+  color: #ffffff !important;
+}
+
+.res-indicator {
+  font-size: 10px;
+  color: var(--muted);
+  font-family: ui-monospace, monospace;
+  background: rgba(0,0,0,0.2);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+
+.res-indicator.critical {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: rgba(255, 77, 109, 0.15);
+}
+
+.toast {
+  position: fixed;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%) translateY(100px);
+  background: var(--accent);
+  color: #fff;
+  padding: 10px 24px;
+  border-radius: 12px;
+  font-weight: 800;
+  font-size: 13px;
+  box-shadow: var(--shadow);
+  z-index: 1000;
+  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s;
+  opacity: 0;
+  pointer-events: none;
+}
+.toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+/* Estilos para o filtro de console */
+.console.filter-log .console-entry.warn,
+.console.filter-log .console-entry.error {
+  display: none;
+}
+
+.console.filter-warn .console-entry.log,
+.console.filter-warn .console-entry.error {
+  display: none;
+}
+
+.console.filter-error .console-entry.log,
+.console.filter-error .console-entry.warn {
+  display: none;
+}
+
+.iframeWrap{
+  flex:1;
+  min-height: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  background: #1a1a1a;
+  overflow: auto;
+  padding: 20px;
+}
+
+iframe{
+  flex-shrink: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s ease, height 0.3s ease;
+  box-shadow: 0 0 50px rgba(0,0,0,0.5);
+  border-radius: 4px;
+  transform: scale(var(--preview-zoom, 1));
+  transform-origin: center center;
+}
+
+/* Simuladores de Dispositivos */
+iframe.mobile { width: 375px; height: 667px; border: 12px solid #222; border-radius: 30px; }
+iframe.mobile.landscape { width: 667px; height: 375px; }
+
+iframe.tablet { width: 768px; height: 1024px; border: 12px solid #222; border-radius: 20px; }
+iframe.tablet.landscape { width: 1024px; height: 768px; }
+
+iframe.notebook { width: 1280px; height: 800px; border: 10px solid #222; border-radius: 12px; }
+iframe.pc { width: 100%; height: 100%; max-width: 1600px; max-height: 900px; }
+iframe.tv { width: 100%; height: 100%; max-width: 3840px; }
+
+@media (max-width: 980px){
+  .layout { flex-direction: column; height: auto; overflow: auto; }
+  .sidebar { width: 100% !important; height: 300px; }
+  .editorPanel, .previewPanel { flex: none; height: 600px; width: 100%; }
+  .resizer-h { display: none; }
+}
+
+/* Esconde a barra de ferramentas quando solicitado via JS */
+.preview-controls-hidden #previewControls {
+  display: none;
+}
+
+/* Efeito de Flash do Snapshot */
+.flash-effect {
+  position: fixed;
+  top: 0; left: 0; width: 100%; height: 100%;
+  background: #fff;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 9999;
+  transition: opacity 0.1s;
+}
+.flash-effect.show { opacity: 1; }
