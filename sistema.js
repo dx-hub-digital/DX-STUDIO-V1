@@ -47,11 +47,15 @@ document.addEventListener('DOMContentLoaded', () => {
   const storageBar = $('#storageBar'), storageText = $('#storageText');
   const historyList = $('#historyList'), toastEl = $('#toast');
   const shutterSound = $('#shutterSound'), flashEffect = $('#flashEffect');
+  const successSound = $('#successSound');
   
   // Sidebar lists
   const openFilesList = $('#openFilesList'), recentFilesList = $('#recentFilesList');
 
   let autoRunTimer;
+  // Variáveis para rastrear sugestões da IA
+  let pendingAiLine = null;
+  let pendingAiEditor = null;
 
   // Função Utilitária para Debounce
   function debounce(func, wait) {
@@ -130,7 +134,6 @@ document.addEventListener('DOMContentLoaded', () => {
       lineNumbers: true,
       tabSize: 2,
       indentUnit: 2,
-      viewportMargin: Infinity,
       lineWrapping: true,
       extraKeys: {"Ctrl-Space": "autocomplete"},
       gutters: gutters // Adiciona a opção de gutters
@@ -714,6 +717,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
     });
+
+    // Se for um erro, adiciona o botão de "Corrigir com IA"
+    if (type === 'error') {
+      const fixBtn = document.createElement('button');
+      fixBtn.className = 'btn tiny primary';
+      fixBtn.style.marginLeft = '10px';
+      fixBtn.style.padding = '2px 8px';
+      fixBtn.innerHTML = '<i class="fas fa-magic"></i> Corrigir';
+      fixBtn.onclick = () => fixErrorWithAi(payload.join(' '));
+      entry.appendChild(fixBtn);
+    }
 
     consoleEl.appendChild(entry);
     consoleEl.scrollTop = consoleEl.scrollHeight;
@@ -1388,9 +1402,24 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   let toastTimer;
-  function showToast(msg) {
+  function showToast(msg, actionText = null, actionFn = null) {
     if (!toastEl) return;
-    toastEl.textContent = msg;
+    toastEl.innerHTML = `<span>${msg}</span>`;
+    
+    if (actionText && actionFn) {
+      const btn = document.createElement('button');
+      btn.className = 'btn tiny primary';
+      btn.style.marginLeft = '15px';
+      btn.style.background = 'rgba(255,255,255,0.2)';
+      btn.textContent = actionText;
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        actionFn();
+        toastEl.classList.remove('show');
+      };
+      toastEl.appendChild(btn);
+    }
+
     toastEl.classList.add('show');
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => {
@@ -1721,37 +1750,38 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.activity-bar i').forEach(icon => {
     icon.addEventListener('click', () => {
       const title = icon.title;
-      const sidebar = $('#sidebar');
+      const sidebar = document.getElementById('sidebar');
       const explorerView = $('#view-explorer');
       const aiView = $('#view-ai');
+      const isSidebarOpen = sidebar.offsetWidth > 0;
+      const isActive = icon.classList.contains('active');
 
-      // Se já está ativo e clicou de novo, fecha a sidebar
-      if (icon.classList.contains('active')) {
+      // Se clicar no ícone que já está ativo e a sidebar estiver aberta, fecha
+      if (isActive && isSidebarOpen) {
         toggleSidebar();
         return;
       }
 
-      document.querySelectorAll('.activity-bar i').forEach(i => i.classList.remove('active'));
-      icon.classList.add('active');
-      
-      if (title === 'Explorador') {
-        explorerView.style.display = 'block';
-        aiView.style.display = 'none';
-        toggleSidebar(true);
-      } else if (title === 'IA Assistant') {
-        explorerView.style.display = 'none';
-        aiView.style.display = 'block';
-        toggleSidebar(true);
-        // Carregamento Preguiçoso (Lazy Load): Só busca modelos se o menu estiver vazio e houver chave
-        const key = aiApiKey?.value.trim();
-        if (key && aiModelSelect && aiModelSelect.options.length <= 1) {
-          carregarModelos(key);
+      // Lógica de troca de telas para funcionalidades implementadas
+      if (title === 'Explorador' || title === 'IA Assistant') {
+        document.querySelectorAll('.activity-bar i').forEach(i => i.classList.remove('active'));
+        icon.classList.add('active');
+
+        if (title === 'Explorador') {
+          explorerView.style.display = 'block';
+          aiView.style.display = 'none';
+        } else {
+          explorerView.style.display = 'none';
+          aiView.style.display = 'block';
+          const key = aiApiKey?.value.trim();
+          if (key && aiModelSelect && aiModelSelect.options.length <= 1) carregarModelos(key);
         }
+
+        // Abre a sidebar apenas se ela estiver fechada
+        if (!isSidebarOpen) toggleSidebar(true);
       } else {
-        if (sidebar && sidebar.offsetWidth > 0) {
-          toggleSidebar();
-        }
-        showToast(`Aba "${title}" em desenvolvimento.`);
+        // Telas não implementadas
+        showToast(`${title}: Em desenvolvimento...`);
       }
       
       editorInstances.forEach(inst => inst.refresh());
@@ -1769,6 +1799,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const aiModelSelect = $('#aiModelSelect');
   const aiModelSelectorContainer = $('#aiModelSelectorContainer');
   const AI_MODEL_KEY = 'dx_studio_ai_model';
+  let aiConversationHistory = []; // Histórico para conversas contínuas
   let isAiLoadingModels = false; // Trava de estado para evitar flood
 
   // Carrega a API Key salva ao iniciar
@@ -1791,28 +1822,40 @@ document.addEventListener('DOMContentLoaded', () => {
     isAiLoadingModels = true;
     if (verifyAiKeyBtn) {
       verifyAiKeyBtn.disabled = true;
-      verifyAiKeyBtn.textContent = '...';
+      verifyAiKeyBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
     }
 
     aiModelSelect.innerHTML = '<option value="">Carregando...</option>';
 
+    // Usamos v1beta para listar uma gama maior de modelos disponíveis para a chave
     const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
 
     try {
       const response = await fetch(url);
       const data = await response.json();
 
-      console.log("Resposta da API Gemini:", data); // Log para debug
-
-      if (!data.models) {
-        aiModelSelect.innerHTML = '<option>Nenhum modelo encontrado</option>';
+      if (data.error) {
+        showToast(`Erro na API: ${data.error.message}`);
+        aiModelSelect.innerHTML = '<option>Erro: Chave Inválida</option>';
         return;
       }
 
-      aiModelSelect.innerHTML = ''; // Limpa o "Carregando..."
+      // Filtra todos os modelos que sejam da família Gemini para garantir compatibilidade
+      const modelosValidos = (data.models || [])
+        .filter(m => 
+          m.name?.includes('gemini') || 
+          m.supportedMethods?.some(method => method.includes('generateContent'))
+        )
+        .sort((a, b) => (a.displayName || "").localeCompare(b.displayName || ""));
 
-      // Popula o menu filtrando apenas modelos que suportam chat (generateContent)
-      data.models.filter(m => m.supportedMethods?.includes('generateContent')).forEach(m => {
+      if (modelosValidos.length === 0) {
+        aiModelSelect.innerHTML = '<option value="">Nenhum modelo compatível encontrado</option>';
+        return;
+      }
+
+      aiModelSelect.innerHTML = '<option value="">Selecione um modelo</option>';
+
+      modelosValidos.forEach(m => {
         const option = document.createElement('option');
         option.value = m.name; 
         option.textContent = m.displayName;
@@ -1827,9 +1870,11 @@ document.addEventListener('DOMContentLoaded', () => {
       aiModelSelectorContainer?.classList.remove('hidden');
       const aiStatusEl = $('.ai-status-text');
       if (aiStatusEl) aiStatusEl.textContent = aiModelSelect.options[aiModelSelect.selectedIndex]?.text || 'Conectado';
+      showToast("Modelos carregados com sucesso!");
     } catch (error) {
       aiModelSelect.innerHTML = '<option value="">Erro de conexão</option>';
       console.error("Erro ao listar modelos:", error);
+      showToast("Falha ao conectar com a API do Gemini.");
     } finally {
       isAiLoadingModels = false;
       if (verifyAiKeyBtn) {
@@ -1850,6 +1895,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const statusText = $('.ai-status-text');
     if (statusText) statusText.textContent = aiModelSelect.options[aiModelSelect.selectedIndex].text;
     showToast("Modelo alterado!");
+  });
+
+  // Atalho para enviar mensagem com Ctrl+Enter (ou Cmd+Enter no Mac)
+  aiChatInput?.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation(); // Evita disparar o atalho global de Run
+      sendAiBtn?.click();
+    }
   });
 
   function getActiveEditorContext() {
@@ -1888,6 +1942,23 @@ document.addEventListener('DOMContentLoaded', () => {
         const codeElement = pre.querySelector('code');
         const codeText = codeElement ? codeElement.innerText : pre.innerText;
 
+        // Detecta a linguagem para oferecer a aplicação automática no editor correspondente
+        let langMode = null;
+        if (codeElement) {
+          const classList = Array.from(codeElement.classList);
+          const langClass = classList.find(cls => cls.startsWith('language-'));
+          if (langClass) {
+            const lang = langClass.replace('language-', '').toLowerCase();
+            const mapping = {
+              'css': 'css',
+              'javascript': 'javascript', 'js': 'javascript',
+              'html': 'htmlmixed', 'htmlmixed': 'htmlmixed', 'xml': 'htmlmixed',
+              'php': 'php', 'python': 'python', 'py': 'python'
+            };
+            langMode = mapping[lang];
+          }
+        }
+
         const actionContainer = document.createElement('div');
         actionContainer.className = 'ai-code-action';
 
@@ -1902,6 +1973,65 @@ document.addEventListener('DOMContentLoaded', () => {
             setTimeout(() => copyBtn.innerHTML = originalHTML, 2000);
           });
         };
+
+        // Botão Aplicar (Específico para o arquivo correspondente, ex: CSS/JS/HTML)
+        const isSingle = modeSelect?.value === 'single';
+        const targetInst = isSingle ? editor : editors[langMode];
+
+        if (targetInst && langMode) {
+          const applyBtn = document.createElement('button');
+          applyBtn.className = 'btn tiny btn-success';
+          applyBtn.innerHTML = '<i class="fas fa-magic"></i> Aplicar';
+          applyBtn.title = isSingle ? 'Aplicar ao editor único' : `Aplicar este código ao editor ${langMode}`;
+
+          // Destaque visual ao passar o mouse
+          applyBtn.onmouseenter = () => {
+            if (pendingAiEditor && pendingAiLine !== null) {
+              pendingAiEditor.addLineClass(pendingAiLine - 1, 'background', 'ai-suggested-highlight');
+              pendingAiEditor.scrollIntoView({ line: pendingAiLine - 1, ch: 0 }, 200);
+            }
+          };
+          applyBtn.onmouseleave = () => {
+            if (pendingAiEditor && pendingAiLine !== null) {
+              pendingAiEditor.removeLineClass(pendingAiLine - 1, 'background', 'ai-suggested-highlight');
+            }
+          };
+          
+          applyBtn.onclick = () => {
+            let codeToApply = codeText;
+            const previousCode = targetInst.getValue();
+
+            // No modo Single (HTML), envolvemos CSS/JS em tags caso não existam no snippet sugerido
+            if (isSingle) {
+              if (langMode === 'css' && !codeText.includes('<style')) {
+                codeToApply = `\n<style>\n${codeText}\n</style>`;
+              } else if (langMode === 'javascript' && !codeText.includes('<script')) {
+                codeToApply = `\n<script>\n${codeText}\n<\/script>`;
+              }
+            }
+
+            // Anexa o código ao final do arquivo para segurança, preservando o código existente
+            targetInst.setValue(previousCode + (previousCode.trim() ? "\n\n" : "") + codeToApply);
+
+            // Toca som de sucesso
+            if (successSound) successSound.play().catch(() => {});
+            
+            // Limpa o destaque
+            if (pendingAiEditor) pendingAiEditor.removeLineClass(pendingAiLine - 1, 'background', 'ai-suggested-highlight');
+            
+            if (!isSingle) switchTab(langMode);
+            
+            showToast(
+              `Código aplicado ao editor ${isSingle ? 'único' : langMode}!`, 
+              "Desfazer", 
+              () => {
+                targetInst.setValue(previousCode);
+                showToast("Alteração desfeita.");
+              }
+            );
+          };
+          actionContainer.appendChild(applyBtn);
+        }
 
         // Botão Inserir no Editor
         const insertBtn = document.createElement('button');
@@ -1936,11 +2066,12 @@ document.addEventListener('DOMContentLoaded', () => {
   sendAiBtn?.addEventListener('click', async () => {
     const text = aiChatInput.value.trim();
     const apiKey = aiApiKey?.value.trim();
+    const modelId = aiModelSelect?.value || "models/gemini-1.5-flash";
 
     if (!text) return;
 
     if (!apiKey) {
-      showToast("Por favor, configure sua API Key nas configurações da IA.");
+      showToast("Configure sua API Key nas configurações da IA.");
       aiConfigPanel?.classList.remove('hidden');
       return;
     }
@@ -1948,10 +2079,19 @@ document.addEventListener('DOMContentLoaded', () => {
     appendAiMessage(text, 'user');
     aiChatInput.value = '';
 
-    const context = getActiveEditorContext();
-    const contextStr = context 
-      ? `Arquivo: ${context.fileName}\nLinguagem: ${context.mode}\nConteúdo:\n${context.content}`
-      : "Nenhum arquivo aberto no momento.";
+    // CONTEXTO INTELIGENTE: Captura o estado atual de todos os editores.
+    // Isso permite que a IA veja a relação entre HTML, CSS e JS.
+    const projectContext = `
+--- CÓDIGO ATUAL DO PROJETO ---
+HTML:
+${editorHtmlInstance.getValue()}
+
+CSS:
+${editorCssInstance.getValue()}
+
+JS:
+${editorJsInstance.getValue()}
+    `.trim();
 
     try {
       // Feedback visual de "pensando"
@@ -1964,33 +2104,81 @@ document.addEventListener('DOMContentLoaded', () => {
       aiChatHistory.appendChild(loadingMsg);
       aiChatHistory.scrollTop = aiChatHistory.scrollHeight;
 
-      // Usa o modelo selecionado dinamicamente
-      const selectedModel = aiModelSelect?.value || "models/gemini-1.5-flash";
-      const url = `https://generativelanguage.googleapis.com/v1beta/${selectedModel}:generateContent?key=${apiKey}`;
+      // Formatação dinâmica do Model ID e URL
+      const formattedModelId = modelId.startsWith('models/') ? modelId : `models/${modelId}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/${formattedModelId}:generateContent?key=${apiKey}`;
+
+      // HISTÓRICO DE CHAT: Mapeia as mensagens anteriores para o formato do Gemini
+      const historyPayload = aiConversationHistory.map(msg => ({
+        role: msg.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: msg.text }]
+      }));
+
+      // PROMPT E PERSONALIZAÇÃO: Instruímos a IA sobre seu papel e o contexto do projeto.
+      const currentTurn = {
+        role: "user",
+        parts: [{ 
+          text: `Você é o DX AI Assistant, um especialista em desenvolvimento web.
+          Você tem acesso ao código completo do projeto do usuário abaixo.
+          Sempre que sugerir cores ou estilos, prefira paletas modernas como Dracula, Monokai ou Nord, mantendo a consistência com a IDE.
+          
+          [CONTEXTO DO PROJETO]
+          ${projectContext}
+          
+          [PERGUNTA DO USUÁRIO]
+          ${text}` 
+        }]
+      };
 
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ 
-            parts: [{ 
-              text: `Você é o DX AI Assistant, integrado em uma IDE web. Ajude o desenvolvedor com base no contexto abaixo. Se sugerir código, use blocos de código markdown.\n\n[CONTEXTO DO CÓDIGO]\n${contextStr}\n\n[PERGUNTA]\n${text}` 
-            }] 
-          }]
-        })
+        body: JSON.stringify({ contents: [...historyPayload, currentTurn] })
       });
 
       const data = await response.json();
       document.getElementById(loadingId)?.remove();
       sendAiBtn.disabled = false;
 
-      if (response.ok && data.candidates && data.candidates[0].content.parts[0].text) {
-        const aiResponse = data.candidates[0].content.parts[0].text;
+      // Log para depuração facilitada
+      console.log("Resposta da API Gemini:", data);
+
+      if (response.ok && data.candidates && data.candidates.length > 0) {
+        const candidate = data.candidates[0];
+        
+        // Verifica se a resposta foi bloqueada por filtros de segurança
+        if (candidate.finishReason === 'SAFETY' || candidate.finishReason === 'RECITATION') {
+          appendAiMessage(`A IA não pôde responder pois o conteúdo foi filtrado (Motivo: ${candidate.finishReason}). Tente reformular sua pergunta.`, 'assistant');
+          return;
+        }
+
+        const aiResponse = candidate.content?.parts?.[0]?.text;
+        
+        if (!aiResponse) {
+          appendAiMessage("Recebi uma resposta sem conteúdo de texto da IA. Verifique o console.", 'assistant');
+          console.warn("Estrutura de resposta inesperada (sem texto):", data);
+          return;
+        }
+
         appendAiMessage(aiResponse, 'assistant');
+
+        // MEMÓRIA DA CONVERSA: Adiciona o par pergunta/resposta ao histórico local
+        aiConversationHistory.push({ role: 'user', text: text });
+        aiConversationHistory.push({ role: 'assistant', text: aiResponse });
+
+        // Otimização: Mantém apenas as últimas 10 trocas
+        if (aiConversationHistory.length > 10) {
+          aiConversationHistory = aiConversationHistory.slice(-10);
+        }
+      } else if (response.status === 429) {
+        appendAiMessage("Ops! Atingimos o limite de cota da API (Erro 429). Tente alternar o modelo ou aguarde um momento.", 'assistant');
+      } else if (data.error) {
+        const errorMsg = data.error.message || "Erro desconhecido na API.";
+        appendAiMessage(`Erro no Gemini (${data.error.status || response.status}): ${errorMsg}`, 'assistant');
+        console.error("Erro detalhado da API:", data.error);
       } else {
-        const errorMsg = data.error ? data.error.message : "Erro desconhecido na API.";
-        appendAiMessage(`Erro no Gemini: ${errorMsg}`, 'assistant');
-        console.error("Erro completo da API:", data);
+        appendAiMessage(`Erro na requisição (Status ${response.status}). Verifique sua conexão e a chave de API.`, 'assistant');
+        console.error("Erro inesperado na resposta:", data);
       }
     } catch (error) {
       sendAiBtn.disabled = false;

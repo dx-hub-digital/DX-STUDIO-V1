@@ -94,7 +94,10 @@
                 <button id="verifyAiKeyBtn" class="btn tiny primary" title="Validar Chave">Verificar</button>
               </div>
               <div id="aiModelSelectorContainer" class="settings-group hidden">
-                <label for="aiModelSelect">Modelo de IA</label>
+                <label for="aiModelSelect">
+                  Modelo de IA 
+                  <i id="aiModelLoadIcon" class="fas fa-circle-notch fa-spin hidden"></i>
+                </label>
                 <select id="aiModelSelect" class="btn tiny w-100"></select>
               </div>
             </div>
@@ -294,6 +297,7 @@
   </div>
 
   <audio id="shutterSound" src="https://www.soundjay.com/mechanical/camera-shutter-click-01.mp3" preload="auto"></audio>
+  <audio id="successSound" src="https://www.soundjay.com/buttons/button-10.mp3" preload="auto"></audio>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
