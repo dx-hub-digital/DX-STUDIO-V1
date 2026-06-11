@@ -449,26 +449,24 @@ document.addEventListener('DOMContentLoaded', () => {
     saveLayout(); // Salva a nova ordem das abas após o drop
   }
 
-  function toggleSidebar() {
+  function toggleSidebar(forceOpen = false) {
     const sidebar = $('#sidebar');
-    const explorerIcon = document.querySelector('.activity-bar i[title="Explorador"]');
-    if (!sidebar || !explorerIcon) return;
+    if (!sidebar) return;
 
     const currentWidth = sidebar.offsetWidth;
-    if (currentWidth > 0) { // Sidebar está aberta, vamos fechar
+    if (currentWidth > 0 && !forceOpen) { // Sidebar está aberta, vamos fechar
       localStorage.setItem(EXPLORER_WIDTH_KEY, sidebar.style.width || '200px');
       sidebar.style.width = '0px';
-      explorerIcon.classList.remove('active'); // Desativa o ícone
       if (resizerS) resizerS.style.display = 'none'; // Esconde o resizer
+      document.querySelectorAll('.activity-bar i').forEach(i => i.classList.remove('active'));
     } else { // Sidebar está fechada, vamos abrir
       const lastWidth = localStorage.getItem(EXPLORER_WIDTH_KEY) || '200px';
       sidebar.style.width = lastWidth;
-      explorerIcon.classList.add('active'); // Ativa o ícone
       if (resizerS) resizerS.style.display = 'block'; // Mostra o resizer
     }
     saveLayout();
     // Força os editores a recalcularem o tamanho para evitar bugs de clique/seleção
-    getActiveEditors().forEach(inst => inst.refresh());
+    editorInstances.forEach(inst => inst.refresh());
   }
 
   // Lógica de Redimensionamento Horizontal
@@ -1722,25 +1720,287 @@ document.addEventListener('DOMContentLoaded', () => {
   // Ativa os ícones da Activity Bar (Barra Lateral Esquerda) e gerencia a sidebar
   document.querySelectorAll('.activity-bar i').forEach(icon => {
     icon.addEventListener('click', () => {
-      document.querySelectorAll('.activity-bar i').forEach(i => i.classList.remove('active'));
-      
-      if (icon.title === 'Explorador') {
-        // Se o ícone do explorador for clicado, ele gerencia seu próprio estado ativo
-        // e a visibilidade da sidebar através de toggleSidebar()
+      const title = icon.title;
+      const sidebar = $('#sidebar');
+      const explorerView = $('#view-explorer');
+      const aiView = $('#view-ai');
+
+      // Se já está ativo e clicou de novo, fecha a sidebar
+      if (icon.classList.contains('active')) {
         toggleSidebar();
-      } else {
-        // Para outros ícones, ativa o ícone clicado
-        icon.classList.add('active');
-        // Se a sidebar estiver aberta, fecha-a ao clicar em outro ícone
-        const sidebar = $('#sidebar');
-        if (sidebar && sidebar.offsetWidth > 0) {
-          toggleSidebar(); // Fecha a sidebar
-        }
-        showToast(`Aba "${icon.title}" em desenvolvimento.`);
+        return;
       }
-      // Refresh editors após qualquer mudança na sidebar
-      getActiveEditors().forEach(inst => inst.refresh());
+
+      document.querySelectorAll('.activity-bar i').forEach(i => i.classList.remove('active'));
+      icon.classList.add('active');
+      
+      if (title === 'Explorador') {
+        explorerView.style.display = 'block';
+        aiView.style.display = 'none';
+        toggleSidebar(true);
+      } else if (title === 'IA Assistant') {
+        explorerView.style.display = 'none';
+        aiView.style.display = 'block';
+        toggleSidebar(true);
+        // Carregamento Preguiçoso (Lazy Load): Só busca modelos se o menu estiver vazio e houver chave
+        const key = aiApiKey?.value.trim();
+        if (key && aiModelSelect && aiModelSelect.options.length <= 1) {
+          carregarModelos(key);
+        }
+      } else {
+        if (sidebar && sidebar.offsetWidth > 0) {
+          toggleSidebar();
+        }
+        showToast(`Aba "${title}" em desenvolvimento.`);
+      }
+      
+      editorInstances.forEach(inst => inst.refresh());
     });
+  });
+
+  // Lógica do DX AI Assistant
+  const aiChatHistory = $('#aiChatHistory');
+  const aiChatInput = $('#aiChatInput');
+  const sendAiBtn = $('#sendAiBtn');
+  const toggleAiConfig = $('#toggleAiConfig');
+  const aiConfigPanel = $('#aiConfigPanel');
+  const aiApiKey = $('#aiApiKey');
+  const verifyAiKeyBtn = $('#verifyAiKeyBtn');
+  const aiModelSelect = $('#aiModelSelect');
+  const aiModelSelectorContainer = $('#aiModelSelectorContainer');
+  const AI_MODEL_KEY = 'dx_studio_ai_model';
+  let isAiLoadingModels = false; // Trava de estado para evitar flood
+
+  // Carrega a API Key salva ao iniciar
+  if (aiApiKey) {
+    aiApiKey.value = localStorage.getItem('dx_studio_ai_key') || '';
+  }
+
+  // Salva a API Key automaticamente ao digitar
+  aiApiKey?.addEventListener('input', (e) => {
+    localStorage.setItem('dx_studio_ai_key', e.target.value);
+  });
+
+  toggleAiConfig?.addEventListener('click', () => {
+    aiConfigPanel.classList.toggle('hidden');
+  });
+
+  async function carregarModelos(apiKey) {
+    if (isAiLoadingModels || !aiModelSelect) return;
+
+    isAiLoadingModels = true;
+    if (verifyAiKeyBtn) {
+      verifyAiKeyBtn.disabled = true;
+      verifyAiKeyBtn.textContent = '...';
+    }
+
+    aiModelSelect.innerHTML = '<option value="">Carregando...</option>';
+
+    const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+
+    try {
+      const response = await fetch(url);
+      const data = await response.json();
+
+      console.log("Resposta da API Gemini:", data); // Log para debug
+
+      if (!data.models) {
+        aiModelSelect.innerHTML = '<option>Nenhum modelo encontrado</option>';
+        console.error("Estrutura de dados inesperada ou erro na API:", data);
+        return;
+      }
+
+      aiModelSelect.innerHTML = ''; // Limpa o "Carregando..."
+
+      // Popula o menu filtrando apenas modelos que suportam chat (generateContent)
+      data.models.filter(m => m.supportedMethods?.includes('generateContent')).forEach(m => {
+        const option = document.createElement('option');
+        option.value = m.name; 
+        option.textContent = m.displayName;
+        aiModelSelect.appendChild(option);
+      });
+
+      const savedModel = localStorage.getItem(AI_MODEL_KEY);
+      if (savedModel && Array.from(aiModelSelect.options).some(o => o.value === savedModel)) {
+        aiModelSelect.value = savedModel;
+      }
+      
+      aiModelSelectorContainer?.classList.remove('hidden');
+      const aiStatusEl = $('.ai-status-text');
+      if (aiStatusEl) aiStatusEl.textContent = aiModelSelect.options[aiModelSelect.selectedIndex]?.text || 'Conectado';
+    } catch (error) {
+      aiModelSelect.innerHTML = '<option value="">Erro de conexão</option>';
+      console.error("Erro ao listar modelos:", error);
+    } finally {
+      isAiLoadingModels = false;
+      if (verifyAiKeyBtn) {
+        verifyAiKeyBtn.disabled = false;
+        verifyAiKeyBtn.textContent = 'Verificar';
+      }
+    }
+  }
+
+  verifyAiKeyBtn?.addEventListener('click', () => {
+    const key = aiApiKey?.value.trim();
+    if (key) carregarModelos(key);
+    else showToast("Insira uma chave antes de verificar.");
+  });
+
+  aiModelSelect?.addEventListener('change', () => {
+    localStorage.setItem(AI_MODEL_KEY, aiModelSelect.value);
+    const statusText = $('.ai-status-text');
+    if (statusText) statusText.textContent = aiModelSelect.options[aiModelSelect.selectedIndex].text;
+    showToast("Modelo alterado!");
+  });
+
+  function getActiveEditorContext() {
+    const isSingle = modeSelect?.value === 'single';
+    if (isSingle && editor) {
+      return { fileName: 'index.html', content: editor.getValue(), mode: 'htmlmixed' };
+    }
+
+    const activeTab = document.querySelector('.tab.active');
+    if (!activeTab) return null;
+
+    const mode = activeTab.dataset.mode;
+    if (mode === 'settings') return { fileName: 'Configurações', content: '', mode: 'settings' };
+
+    const inst = editors[mode] || editor;
+    if (!inst || typeof inst.getValue !== 'function') return null;
+
+    return {
+      fileName: activeTab.textContent.replace('X', '').trim(),
+      content: inst.getValue(),
+      mode: mode
+    };
+  }
+
+  function appendAiMessage(text, role = 'assistant') {
+    if (!aiChatHistory) return;
+    const msg = document.createElement('div');
+    msg.className = `ai-message ${role}`;
+
+    if (role === 'assistant') {
+      // Renderiza Markdown usando marked.js
+      msg.innerHTML = (typeof marked !== 'undefined') ? marked.parse(text) : text.replace(/\n/g, '<br>');
+
+      // Adiciona botões de ação para cada bloco de código gerado
+      msg.querySelectorAll('pre').forEach(pre => {
+        const codeElement = pre.querySelector('code');
+        const codeText = codeElement ? codeElement.innerText : pre.innerText;
+
+        const actionContainer = document.createElement('div');
+        actionContainer.className = 'ai-code-action';
+
+        // Botão Copiar
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'btn tiny';
+        copyBtn.innerHTML = '<i class="fas fa-copy"></i> Copiar';
+        copyBtn.onclick = () => {
+          navigator.clipboard.writeText(codeText).then(() => {
+            const originalHTML = copyBtn.innerHTML;
+            copyBtn.innerHTML = '<i class="fas fa-check"></i> Copiado!';
+            setTimeout(() => copyBtn.innerHTML = originalHTML, 2000);
+          });
+        };
+
+        // Botão Inserir no Editor
+        const insertBtn = document.createElement('button');
+        insertBtn.className = 'btn tiny primary';
+        insertBtn.innerHTML = '<i class="fas fa-arrow-right"></i> Inserir';
+        insertBtn.title = "Inserir este código no editor ativo";
+        insertBtn.onclick = () => {
+          const context = getActiveEditorContext();
+          if (context && context.mode !== 'settings') {
+            const inst = editors[context.mode] || editor;
+            if (inst) {
+              inst.replaceRange(codeText, inst.getCursor());
+              showToast("Código inserido no editor!");
+            }
+          } else {
+            showToast("Abra um arquivo compatível para inserir o código.");
+          }
+        };
+
+        actionContainer.appendChild(copyBtn);
+        actionContainer.appendChild(insertBtn);
+        pre.appendChild(actionContainer);
+      });
+    } else {
+      msg.textContent = text;
+    }
+
+    aiChatHistory.appendChild(msg);
+    aiChatHistory.scrollTop = aiChatHistory.scrollHeight;
+  }
+
+  sendAiBtn?.addEventListener('click', async () => {
+    const text = aiChatInput.value.trim();
+    const apiKey = aiApiKey?.value.trim();
+
+    if (!text) return;
+
+    if (!apiKey) {
+      showToast("Por favor, configure sua API Key nas configurações da IA.");
+      aiConfigPanel?.classList.remove('hidden');
+      return;
+    }
+
+    appendAiMessage(text, 'user');
+    aiChatInput.value = '';
+
+    const context = getActiveEditorContext();
+    const contextStr = context 
+      ? `Arquivo: ${context.fileName}\nLinguagem: ${context.mode}\nConteúdo:\n${context.content}`
+      : "Nenhum arquivo aberto no momento.";
+
+    try {
+      // Feedback visual de "pensando"
+      sendAiBtn.disabled = true;
+      const loadingId = 'ai-loading-' + Date.now();
+      const loadingMsg = document.createElement('div');
+      loadingMsg.id = loadingId;
+      loadingMsg.className = 'ai-message assistant';
+      loadingMsg.textContent = 'Analisando código...';
+      aiChatHistory.appendChild(loadingMsg);
+      aiChatHistory.scrollTop = aiChatHistory.scrollHeight;
+
+      // Usa o modelo selecionado dinamicamente
+      const selectedModel = aiModelSelect?.value || "models/gemini-1.5-flash";
+      const url = `https://generativelanguage.googleapis.com/v1beta/${selectedModel}:generateContent?key=${apiKey}`;
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ 
+            parts: [{ 
+              text: `Você é o DX AI Assistant, integrado em uma IDE web. Ajude o desenvolvedor com base no contexto abaixo. Se sugerir código, use blocos de código markdown.\n\n[CONTEXTO DO CÓDIGO]\n${contextStr}\n\n[PERGUNTA]\n${text}` 
+            }] 
+          }]
+        })
+      });
+
+      const data = await response.json();
+      document.getElementById(loadingId)?.remove();
+      sendAiBtn.disabled = false;
+
+      if (response.ok && data.candidates && data.candidates[0].content.parts[0].text) {
+        const aiResponse = data.candidates[0].content.parts[0].text;
+        appendAiMessage(aiResponse, 'assistant');
+      } else {
+        const errorMsg = data.error ? data.error.message : "Erro desconhecido na API.";
+        appendAiMessage(`Erro no Gemini: ${errorMsg}`, 'assistant');
+        console.error("Erro completo da API:", data);
+      }
+    } catch (error) {
+      sendAiBtn.disabled = false;
+      const loadingMsg = aiChatHistory.querySelector('.assistant:last-child');
+      if (loadingMsg && loadingMsg.textContent === 'Analisando código...') loadingMsg.remove();
+      
+      appendAiMessage("Erro crítico de conexão. Verifique sua internet e a chave de API.", 'assistant');
+      console.error("AI Error:", error);
+    }
   });
 
   // Ativa o colapso das seções na Sidebar (Chevron)

@@ -59,19 +59,59 @@
     <aside class="activity-bar">
       <i class="fas fa-copy active" title="Explorador"></i>
       <i class="fas fa-search" title="Pesquisar"></i>
+      <i class="fas fa-robot" title="IA Assistant"></i>
       <i class="fas fa-code-branch" title="Controle de Código"></i>
       <i class="fas fa-th-large" title="Extensões"></i>
     </aside>
 
     <div class="sidebar" id="sidebar">
-      <div class="sidebar-header">Explorador</div>
-      <div class="sidebar-search">
-        <input type="text" id="sidebarSearchInput" placeholder="Pesquisar arquivos..." title="Filtrar arquivos abertos">
+      <!-- Visualização do Explorador -->
+      <div id="view-explorer">
+        <div class="sidebar-header">Explorador</div>
+        <div class="sidebar-search">
+          <input type="text" id="sidebarSearchInput" placeholder="Pesquisar arquivos..." title="Filtrar arquivos abertos">
+        </div>
+        <div class="sidebar-section-title" data-target="openFilesList">Editores Abertos <i class="fas fa-chevron-down"></i></div>
+        <div id="openFilesList" class="open-files-list"></div>
+        <div class="sidebar-section-title" data-target="recentFilesList">Arquivos Recentes <i class="fas fa-chevron-down"></i></div>
+        <div id="recentFilesList" class="open-files-list"></div>
       </div>
-      <div class="sidebar-section-title" data-target="openFilesList">Editores Abertos <i class="fas fa-chevron-down"></i></div>
-      <div id="openFilesList" class="open-files-list"></div>
-      <div class="sidebar-section-title" data-target="recentFilesList">Arquivos Recentes <i class="fas fa-chevron-down"></i></div>
-      <div id="recentFilesList" class="open-files-list"></div>
+
+      <!-- Visualização da IA -->
+      <div id="view-ai">
+        <div class="sidebar-header">DX AI Assistant</div>
+        <div class="ai-chat-container">
+          <div class="ai-config-section">
+            <div class="ai-status-box">
+              <span class="ai-status-dot active"></span>
+              <span class="ai-status-text">Gemini 1.5 Flash</span>
+              <i class="fas fa-cog ai-config-toggle" id="toggleAiConfig" title="Configurar API"></i>
+            </div>
+            <div id="aiConfigPanel" class="ai-config-panel hidden">
+              <label>API Key</label>
+              <div class="ai-key-input-group">
+                <input type="password" id="aiApiKey" class="settings-textarea" placeholder="Cole sua chave aqui...">
+                <button id="verifyAiKeyBtn" class="btn tiny primary" title="Validar Chave">Verificar</button>
+              </div>
+              <div id="aiModelSelectorContainer" class="settings-group hidden">
+                <label for="aiModelSelect">Modelo de IA</label>
+                <select id="aiModelSelect" class="btn tiny w-100"></select>
+              </div>
+            </div>
+          </div>
+
+          <div id="aiChatHistory" class="ai-chat-history">
+            <div class="ai-message assistant">Olá! Eu tenho acesso ao seu código atual. Como posso ajudar você hoje?</div>
+          </div>
+
+          <div class="ai-chat-input-wrap">
+            <textarea id="aiChatInput" placeholder="Pergunte algo sobre seu código..."></textarea>
+            <div class="ai-chat-actions">
+              <button id="sendAiBtn" class="btn tiny primary"><i class="fas fa-paper-plane"></i> Enviar</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
     <div class="resizer-s" id="resizerS"></div>
 
@@ -256,6 +296,7 @@
   <audio id="shutterSound" src="https://www.soundjay.com/mechanical/camera-shutter-click-01.mp3" preload="auto"></audio>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/codemirror.min.js"></script>
   <!-- Addons para IntelliSense -->
