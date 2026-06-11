@@ -1806,7 +1806,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (!data.models) {
         aiModelSelect.innerHTML = '<option>Nenhum modelo encontrado</option>';
-        console.error("Estrutura de dados inesperada ou erro na API:", data);
         return;
       }
 
