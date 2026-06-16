@@ -959,6 +959,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     lastLogEntry = { payloadStr, type, element: entry, count: 1, badge: null };
+
+    // Incrementa contadores globais
+    if (type in consoleCounts) {
+      consoleCounts[type]++;
+      updateConsoleCountersUI();
+    }
   }
 
   function clearConsole(){
@@ -2911,12 +2917,6 @@ document.addEventListener('DOMContentLoaded', () => {
   window.addEventListener('message', (ev) => {
     const data = ev.data;
     if (!data || !data.__dxStudioConsole) return;
-
-    // Incrementa contadores
-    if (data.type in consoleCounts) {
-      consoleCounts[data.type]++;
-      updateConsoleCountersUI();
-    }
 
     // REQUISITO: Espelhar erros do console no Terminal automaticamente
     if (data.type === 'error') {
