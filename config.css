@@ -220,7 +220,8 @@ select{
 .modal-overlay {
   position: fixed; top: 0; left: 0; width: 100%; height: 100%;
   background: rgba(0,0,0,0.85); z-index: 3000; display: none;
-  align-items: center; justify-content: center; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+  align-items: center; justify-content: center; 
+  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
 }
 .modal-overlay.active { display: flex; }
 .modal-content {
@@ -233,6 +234,9 @@ select{
 .diff-box { flex: 1; display: flex; flex-direction: column; background: #1e1e1e; }
 .diff-label { padding: 8px 12px; font-size: 11px; font-weight: 800; text-transform: uppercase; color: var(--muted); background: rgba(0,0,0,0.2); border-bottom: 1px solid var(--border); }
 .diff-editor-target { flex: 1; overflow: hidden; }
+
+/* Garante que o CodeMirror dentro do Diff ocupe toda a altura do modal */
+.diff-editor-target .CodeMirror { height: 100%; }
 
 /* Realce de Diff */
 .diff-added-line { background: rgba(45, 226, 166, 0.2) !important; border-left: 3px solid var(--accent2); }
@@ -252,7 +256,7 @@ select{
   position: fixed; top: 0; left: 0; width: 100%; height: 100%;
   background: rgba(0,0,0,0.6); z-index: 5000; display: none;
   align-items: flex-start; justify-content: center; padding-top: 15vh;
-  -webkit-backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px); 
   backdrop-filter: blur(2px);
 }
 .command-palette-overlay.active { display: flex; }

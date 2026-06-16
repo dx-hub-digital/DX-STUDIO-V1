@@ -1259,6 +1259,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const activeTab = document.querySelector(`.tab[data-mode="${mode}"]`);
     if (activeTab) activeTab.classList.add('active');
 
+    // Lógica para alternar entre os containers principais (Código vs Configurações)
+    const editorMainContent = $('.editor-main-content');
+    const editorSettings = $('#editorSettings');
+    
+    if (mode === 'settings') {
+      if (editorMainContent) editorMainContent.style.display = 'none';
+    } else {
+      if (editorMainContent) editorMainContent.style.display = 'flex';
+      if (editorSettings) editorSettings.style.display = 'none';
+    }
+
     // Esconde todos os editores e ativa o correto
     const allEditors = document.querySelectorAll('.fileEditors .singleEditor');
     allEditors.forEach(ed => {
