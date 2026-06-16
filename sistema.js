@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let isResizingV = false;
   let isResizingSidebar = false;
   let isResizingTabBar = false;
+  let isResizingTerminal = false;
 
   const modeSelect = $('#modeSelect');
   const runBtn = $('#runBtn');
@@ -26,6 +27,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const consoleEl = $('#console'), previewFrame = $('#preview');
   const resizerH = $('#resizerH'), resizerV = $('#resizerV'), resizerS = $('#resizerS');
   const tabBarResizerV = $('#tabBarResizerV');
+  const resizerTerminal = $('#resizerTerminal');
+  const terminalInput = $('#terminalInput');
+  const terminalOutput = $('#terminalOutput');
   const edPanel = $('.editorPanel'), prePanel = $('.previewPanel');
   const consoleWrap = $('.consoleWrap');
   const contextMenu = $('#tabContextMenu');
@@ -48,6 +52,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const historyList = $('#historyList'), toastEl = $('#toast');
   const shutterSound = $('#shutterSound'), flashEffect = $('#flashEffect');
   const successSound = $('#successSound');
+
+  // Elementos do Command Palette
+  const commandPalette = $('#commandPalette');
+  const commandInput = $('#commandPaletteInput');
+  const commandList = $('#commandPaletteList');
   
   // Sidebar lists
   const openFilesList = $('#openFilesList'), recentFilesList = $('#recentFilesList');
@@ -81,15 +90,165 @@ document.addEventListener('DOMContentLoaded', () => {
   const PANELS_FLEX_KEY = 'dx_studio_panels_flex';
   const CONSOLE_HEIGHT_KEY = 'dx_studio_console_height';
   const TABBAR_HEIGHT_KEY = 'dx_studio_tabbar_height';
+  const TERMINAL_HEIGHT_KEY = 'dx_studio_terminal_height';
   const TAB_WIDTHS_KEY = 'dx_studio_tab_widths';
   const TAB_ORDER_KEY = 'dx_studio_tab_order'; // Nova chave para a ordem das abas
+  const TERMINAL_HISTORY_KEY = 'dx_studio_terminal_history';
 
   let errorNavigationList = [];
   let currentErrorIndex = -1;
   let lastLogEntry = null; // { payloadStr, type, element, count, badge }
+  let terminalHistory = JSON.parse(localStorage.getItem(TERMINAL_HISTORY_KEY) || '[]');
+  let terminalHistoryIndex = terminalHistory.length;
   let lastSnapshotDataURL = null; // Armazena o último snapshot para exportação
   let lastJsOffset = 0;
   let highlightedLines = [];
+
+  // Variáveis para o Minimap
+  let minimapInst = null;
+  
+  function initMinimap() {
+    const minimapEl = $('#minimap');
+    if (!minimapEl) return;
+    
+    // Cria o elemento visual do destaque (viewport slider)
+    const slider = document.createElement('div');
+    slider.id = 'minimap-slider';
+    slider.className = 'minimap-view-slider';
+    minimapEl.appendChild(slider);
+
+    // Torna o Minimap clicável para navegar no código
+    minimapEl.addEventListener('mousedown', (e) => {
+      // Pega o editor ativo no momento do clique
+      let activeCM = null;
+      if (modeSelect?.value === 'single') {
+        activeCM = editor;
+      } else {
+        const activeTab = document.querySelector('.tab.active');
+        if (activeTab) activeCM = editors[activeTab.dataset.mode];
+      }
+
+      if (!activeCM || !minimapInst) return;
+
+      const handleMove = (moveEvent) => {
+        const rect = minimapEl.getBoundingClientRect();
+        const clickY = moveEvent.clientY - rect.top;
+        
+        const info = activeCM.getScrollInfo();
+        const mInfo = minimapInst.getScrollInfo();
+        
+        // Calcula a escala entre o editor e o minimapa
+        const scale = mInfo.height / info.height;
+        
+        // Calcula o novo scroll, tentando centralizar a viewport no clique
+        const targetScrollTop = (clickY + mInfo.top) / scale - (info.clientHeight / 2);
+        
+        activeCM.scrollTo(null, targetScrollTop);
+      };
+
+      handleMove(e); // Executa no clique inicial
+
+      const handleUp = () => {
+        window.removeEventListener('mousemove', handleMove);
+        window.removeEventListener('mouseup', handleUp);
+      };
+      window.addEventListener('mousemove', handleMove);
+      window.addEventListener('mouseup', handleUp);
+    });
+
+    minimapInst = CodeMirror(minimapEl, {
+      mode: 'htmlmixed',
+      theme: currentTheme,
+      readOnly: true,
+      lineNumbers: false,
+      foldGutter: false,
+      gutters: [],
+      scrollbarStyle: 'null',
+      lineWrapping: false
+    });
+    
+    syncMinimap();
+  }
+
+  function syncMinimap() {
+    if (!minimapInst) return;
+    
+    // Pega o editor ativo no momento
+    let activeCM = null;
+    if (modeSelect?.value === 'single') {
+      activeCM = editor;
+    } else {
+      const activeTab = document.querySelector('.tab.active');
+      if (activeTab) {
+        const mode = activeTab.dataset.mode;
+        activeCM = editors[mode];
+      }
+    }
+
+    if (activeCM && typeof activeCM.getValue === 'function') {
+      // REQUISITO: Ocultar Minimap se tiver menos de 20 linhas
+      const lineCount = activeCM.lineCount();
+      const minimapEl = $('#minimap');
+      if (lineCount < 20) {
+        if (minimapEl) minimapEl.style.display = 'none';
+        return;
+      } else {
+        if (minimapEl) minimapEl.style.display = 'block';
+      }
+
+      minimapInst.setOption('mode', activeCM.getOption('mode'));
+      minimapInst.setValue(activeCM.getValue());
+      
+      // Sincroniza o Scroll e o Destaque Retangular
+      const scrollSync = () => {
+        const info = activeCM.getScrollInfo();
+        const height = info.height - info.clientHeight;
+        const ratio = height > 0 ? info.top / height : 0;
+        const mInfo = minimapInst.getScrollInfo();
+        
+        const mScrollTop = ratio * (mInfo.height - mInfo.clientHeight);
+        minimapInst.scrollTo(0, mScrollTop);
+
+        // Atualiza o destaque retangular
+        const slider = $('#minimap-slider');
+        if (slider) {
+          // Calcula a escala entre o editor real e o minimapa
+          const scale = mInfo.height / info.height;
+          
+          // Altura do slider proporcional à área visível do editor
+          slider.style.height = (info.clientHeight * scale) + 'px';
+          
+          // Posição ajustada descontando o scroll do próprio minimapa
+          slider.style.top = (info.top * scale - mScrollTop) + 'px';
+        }
+
+        // Gerencia efeito de fade-out
+        minimapEl.classList.toggle('scrolled-top', mInfo.top > 10);
+        minimapEl.classList.toggle('scrolled-bottom', mInfo.top + mInfo.clientHeight < mInfo.height - 10);
+
+        // REQUISITO: Desenhar Marcadores de Erros/Avisos
+        minimapEl.querySelectorAll('.minimap-marker').forEach(m => m.remove());
+        if (errorNavigationList.length > 0 && activeCM) {
+          errorNavigationList.forEach(err => {
+            // Verifica se o erro pertence ao editor atualmente visível
+            if (err.editor === activeCM) {
+              const marker = document.createElement('div');
+              marker.className = `minimap-marker ${err.type}`;
+              // O cálculo 'err.line * 4' baseia-se no line-height de 4px definido no CSS do minimap
+              marker.style.top = (err.line * 4 - mInfo.top) + 'px';
+              minimapEl.appendChild(marker);
+            }
+          });
+        }
+      };
+
+      // Limpa listeners antigos para evitar duplicação ao trocar de abas
+      activeCM.off('scroll', activeCM._minimapSync);
+      activeCM._minimapSync = scrollSync;
+      activeCM.on('scroll', scrollSync);
+      activeCM.on('change', () => minimapInst.setValue(activeCM.getValue()));
+    }
+  }
 
   const defaultSnippets = {
     htmlmixed: `<!-- DX Studio: HTML -->\n<h1>Olá Mundo!</h1>\n<p>Edite o código e clique em <b>Run</b>.</p>\n` ,
@@ -300,6 +459,7 @@ document.addEventListener('DOMContentLoaded', () => {
       item.editor.setGutterMarker(item.line, 'error-gutter', null);
     });
     highlightedLines = [];
+    syncMinimap(); // Atualiza o minimap para remover os marcadores visuais
   }
 
   function highlightLine(editor, line, type = 'error') {
@@ -319,6 +479,55 @@ document.addEventListener('DOMContentLoaded', () => {
     
     highlightedLines.push({ editor, line });
     editor.scrollIntoView({ line, ch: 0 }, 200);
+    syncMinimap(); // Força a atualização dos marcadores no minimap
+  }
+
+  // Lógica do Terminal Integrado
+  function appendTerminal(msg, type = '') {
+    if (!terminalOutput) return;
+    const line = document.createElement('div');
+    line.className = `terminal-line ${type}`;
+    line.textContent = msg;
+    terminalOutput.appendChild(line);
+    terminalOutput.scrollTop = terminalOutput.scrollHeight;
+  }
+
+  function processTerminalCommand(cmd) {
+    const input = cmd.trim().toLowerCase();
+    if (!input) return;
+
+    appendTerminal(`> ${cmd}`, 'info');
+    const parts = input.split(' ');
+    const command = parts[0];
+
+    switch(command) {
+      case 'help':
+        appendTerminal('Comandos disponíveis:');
+        appendTerminal('  run     - Executa o projeto atual');
+        appendTerminal('  save    - Salva o projeto no localStorage');
+        appendTerminal('  clear   - Limpa as mensagens do terminal');
+        appendTerminal('  format  - Formata o código do arquivo ativo');
+        appendTerminal('  cls     - Atalho para limpar');
+        break;
+      case 'run':
+        run();
+        appendTerminal('Executando...', 'success');
+        break;
+      case 'save':
+        save();
+        appendTerminal('Projeto salvo com sucesso!', 'success');
+        break;
+      case 'clear':
+      case 'cls':
+        terminalOutput.innerHTML = '';
+        break;
+      case 'format':
+        formatCode();
+        appendTerminal('Código formatado.', 'success');
+        break;
+      default:
+        appendTerminal(`Comando não reconhecido: '${command}'. Digite 'help' para ajuda.`, 'error');
+    }
   }
 
   let consoleCounts = { log: 0, warn: 0, error: 0 };
@@ -482,6 +691,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Lógica de Redimensionamento Vertical (Console)
   resizerV?.addEventListener('mousedown', () => isResizingV = true);
 
+  // Lógica de Redimensionamento do Terminal
+  resizerTerminal?.addEventListener('mousedown', () => isResizingTerminal = true);
+
   // Lógica de Redimensionamento da Sidebar
   resizerS?.addEventListener('mousedown', () => isResizingSidebar = true);
 
@@ -518,6 +730,12 @@ document.addEventListener('DOMContentLoaded', () => {
       if (consoleHeight < 40) consoleHeight = 40; 
       consoleEl.style.maxHeight = `${Math.max(50, consoleHeight - 40)}px`;
     }
+    if (isResizingTerminal) {
+      const panelRect = edPanel.getBoundingClientRect();
+      let terminalHeight = panelRect.bottom - e.clientY - $('#statusbar').offsetHeight;
+      if (terminalHeight < 30) terminalHeight = 0;
+      $('#terminalWrap').style.height = `${Math.max(0, terminalHeight)}px`;
+    }
     if (isResizingTabBar) {
       const newHeight = e.clientY - $('#tabBar').getBoundingClientRect().top;
       $('#tabBar').style.height = `${Math.min(Math.max(35, newHeight), 100)}px`;
@@ -536,7 +754,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   window.addEventListener('mouseup', () => {
-    if (isResizingH || isResizingV || isResizingTabBar || isResizingSidebar || isResizingTabWidth) {
+    if (isResizingH || isResizingV || isResizingTabBar || isResizingSidebar || isResizingTabWidth || isResizingTerminal) {
       saveLayout();
       // Força os editores a recalcularem o tamanho para evitar bugs de clique/seleção
       editorInstances.forEach(inst => inst.refresh());
@@ -545,6 +763,7 @@ document.addEventListener('DOMContentLoaded', () => {
     isResizingV = false;
     isResizingTabBar = false;
     isResizingSidebar = false;
+    isResizingTerminal = false;
     isResizingTabWidth = false;
     activeTabResizing = null;
     document.body.style.cursor = 'default';
@@ -771,6 +990,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }));
     if (consoleEl) localStorage.setItem(CONSOLE_HEIGHT_KEY, consoleEl.style.maxHeight);
     if (tabBar) localStorage.setItem(TABBAR_HEIGHT_KEY, tabBar.style.height);
+    const terminalWrap = $('#terminalWrap');
+    if (terminalWrap) localStorage.setItem(TERMINAL_HEIGHT_KEY, terminalWrap.style.height);
     
     // Salva a ordem atual das abas
     const currentTabOrder = [];
@@ -994,23 +1215,19 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => runBtn?.classList.remove('loading'), 600);
   }
 
-  function triggerAutoRun() {
+  // Autosave com debounce refinado
+  const debouncedPersistence = debounce(() => {
+    save(true);
     if (autosaveStatus) {
       autosaveStatus.classList.add('active');
-      autosaveStatus.querySelector('i')?.classList.add('syncing');
+      setTimeout(() => autosaveStatus.classList.remove('active'), 1500);
     }
+  }, 2000); // Persiste a cada 2 segundos de inatividade
 
+  function triggerAutoRun() {
     clearTimeout(autoRunTimer);
     autoRunTimer = setTimeout(() => {
       run();
-      save(true); // Salva automaticamente
-
-      setTimeout(() => {
-        if (autosaveStatus) {
-          autosaveStatus.classList.remove('active');
-          autosaveStatus.querySelector('i')?.classList.remove('syncing');
-        }
-      }, 1000);
     }, 1000); // Aguarda 1 segundo após parar de digitar
   }
 
@@ -1063,6 +1280,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setStatus(`Editando: ${mode.toUpperCase()}`);
     updateRecentFiles(mode);
     updateSidebarFileList();
+    syncMinimap(); // Sincroniza o minimap ao trocar de aba
   }
 
   function updateSidebarFileList() {
@@ -1515,6 +1733,125 @@ document.addEventListener('DOMContentLoaded', () => {
   resetLayoutBtn?.addEventListener('click', resetLayout);
   resetFactoryBtn?.addEventListener('click', resetToFactorySettings);
 
+  // SISTEMA DE COMMAND PALETTE
+  const commands = [
+    { id: 'run', label: 'Executar Projeto', icon: 'fa-play', action: run, shortcut: 'Ctrl+Enter' },
+    { id: 'save', label: 'Salvar Projeto', icon: 'fa-save', action: save, shortcut: 'Ctrl+S' },
+    { id: 'format', label: 'Formatar Código (Prettier)', icon: 'fa-magic', action: formatCode, shortcut: 'Ctrl+Shift+F' },
+    { id: 'export', label: 'Exportar Projeto (ZIP)', icon: 'fa-file-archive', action: exportProject, shortcut: '' },
+    { id: 'clear', label: 'Limpar Console', icon: 'fa-trash', action: clearConsole, shortcut: 'Ctrl+L' },
+    { id: 'snapshot', label: 'Capturar Snapshot', icon: 'fa-camera', action: takeSnapshot, shortcut: 'Ctrl+P' },
+    { id: 'sidebar', label: 'Alternar Barra Lateral', icon: 'fa-columns', action: toggleSidebar, shortcut: 'Ctrl+B' },
+    { id: 'console', label: 'Alternar Console', icon: 'fa-terminal', action: toggleConsole, shortcut: '' },
+    { id: 'reset', label: 'Resetar Layout', icon: 'fa-sync-alt', action: resetLayout, shortcut: '' },
+    { id: 'settings', label: 'Abrir Configurações', icon: 'fa-cog', action: () => switchTab('settings'), shortcut: '' }
+  ];
+
+  let selectedCommandIndex = 0;
+  let filteredCommands = [];
+
+  function openCommandPalette() {
+    commandPalette?.classList.add('active');
+    commandInput?.focus();
+    commandInput.value = '';
+    renderCommands();
+  }
+
+  function closeCommandPalette() {
+    commandPalette?.classList.remove('active');
+    // Retorna o foco para o editor ativo
+    editorInstances.forEach(inst => { if (inst.hasFocus()) inst.focus(); });
+  }
+
+  function renderCommands() {
+    const query = commandInput.value.toLowerCase();
+    filteredCommands = commands.filter(c => c.label.toLowerCase().includes(query));
+    
+    if (selectedCommandIndex >= filteredCommands.length) selectedCommandIndex = 0;
+
+    commandList.innerHTML = '';
+    filteredCommands.forEach((cmd, idx) => {
+      const item = document.createElement('div');
+      item.className = `command-item ${idx === selectedCommandIndex ? 'selected' : ''}`;
+      item.innerHTML = `
+        <div class="command-label"><i class="fas ${cmd.icon}"></i> ${cmd.label}</div>
+        ${cmd.shortcut ? `<span class="command-shortcut">${cmd.shortcut}</span>` : ''}
+      `;
+      item.onclick = () => executeCommand(cmd);
+      commandList.appendChild(item);
+      if (idx === selectedCommandIndex) item.scrollIntoView({ block: 'nearest' });
+    });
+  }
+
+  function executeCommand(cmd) {
+    cmd.action();
+    closeCommandPalette();
+    showToast(`Executado: ${cmd.label}`);
+  }
+
+  commandInput?.addEventListener('input', () => {
+    selectedCommandIndex = 0;
+    renderCommands();
+  });
+
+  commandInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      selectedCommandIndex = (selectedCommandIndex + 1) % filteredCommands.length;
+      renderCommands();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      selectedCommandIndex = (selectedCommandIndex - 1 + filteredCommands.length) % filteredCommands.length;
+      renderCommands();
+    } else if (e.key === 'Enter') {
+      if (filteredCommands[selectedCommandIndex]) {
+        executeCommand(filteredCommands[selectedCommandIndex]);
+      }
+    } else if (e.key === 'Escape') {
+      closeCommandPalette();
+    }
+  });
+
+  terminalInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      const cmd = terminalInput.value.trim();
+      if (cmd) {
+        // Adiciona ao histórico se for diferente do último comando para evitar duplicatas seguidas
+        if (terminalHistory[terminalHistory.length - 1] !== cmd) {
+          terminalHistory.push(cmd);
+          if (terminalHistory.length > 50) terminalHistory.shift(); // Limita a 50 entradas
+          localStorage.setItem(TERMINAL_HISTORY_KEY, JSON.stringify(terminalHistory));
+        }
+        terminalHistoryIndex = terminalHistory.length;
+      }
+      processTerminalCommand(cmd);
+      terminalInput.value = '';
+    } else if (e.key === 'ArrowUp') {
+      if (terminalHistory.length > 0 && terminalHistoryIndex > 0) {
+        e.preventDefault();
+        terminalHistoryIndex--;
+        terminalInput.value = terminalHistory[terminalHistoryIndex];
+        // Move o cursor para o final do texto
+        setTimeout(() => terminalInput.setSelectionRange(terminalInput.value.length, terminalInput.value.length), 0);
+      }
+    } else if (e.key === 'ArrowDown') {
+      if (terminalHistoryIndex < terminalHistory.length - 1) {
+        e.preventDefault();
+        terminalHistoryIndex++;
+        terminalInput.value = terminalHistory[terminalHistoryIndex];
+      } else if (terminalHistoryIndex === terminalHistory.length - 1) {
+        e.preventDefault();
+        terminalHistoryIndex = terminalHistory.length;
+        terminalInput.value = '';
+      }
+    }
+  });
+
+  // Fecha a paleta ao clicar fora
+  commandPalette?.addEventListener('click', (e) => {
+    if (e.target === commandPalette) closeCommandPalette();
+  });
+
   sidebarSearchInput?.addEventListener('input', updateSidebarFileList);
   togglePreviewToolbarBtn?.addEventListener('click', togglePreviewToolbar);
   closePreviewBtn?.addEventListener('click', () => setPreviewVisible(false));
@@ -1525,6 +1862,7 @@ document.addEventListener('DOMContentLoaded', () => {
     inst?.on('change', () => {
       setStatus('Editando...');
       clearErrorHighlights();
+      debouncedPersistence(); // Salva no storage silenciosamente
       triggerAutoRun();
     });
   });
@@ -1769,10 +2107,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (title === 'Explorador') {
           explorerView.style.display = 'block';
-          aiView.style.display = 'none';
+          if ($('#ai-sidebar')) $('#ai-sidebar').style.display = 'none';
         } else {
           explorerView.style.display = 'none';
-          aiView.style.display = 'block';
+          if ($('#ai-sidebar')) $('#ai-sidebar').style.display = 'block';
           const key = aiApiKey?.value.trim();
           if (key && aiModelSelect && aiModelSelect.options.length <= 1) carregarModelos(key);
         }
@@ -1789,7 +2127,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Lógica do DX AI Assistant
-  const aiChatHistory = $('#aiChatHistory');
+  const aiChatHistory = $('#chat-messages');
   const aiChatInput = $('#aiChatInput');
   const sendAiBtn = $('#sendAiBtn');
   const toggleAiConfig = $('#toggleAiConfig');
@@ -1798,8 +2136,22 @@ document.addEventListener('DOMContentLoaded', () => {
   const verifyAiKeyBtn = $('#verifyAiKeyBtn');
   const aiModelSelect = $('#aiModelSelect');
   const aiModelSelectorContainer = $('#aiModelSelectorContainer');
+  const newAiChatBtn = $('#newAiChatBtn');
+  const showAiHistoryBtn = $('#showAiHistoryBtn');
+  const aiHistoryPanel = $('#aiHistoryPanel');
+  const aiHistoryList = $('#aiHistoryList');
+  const importChatInput = $('#importChatInput');
+  
+  // Modal de Diff
+  const diffModal = $('#diffModal');
+  const confirmDiffBtn = $('#confirmDiffBtn');
+  const cancelDiffBtn = $('#cancelDiffBtn');
+  const closeDiffBtn = $('#closeDiffBtn');
+
   const AI_MODEL_KEY = 'dx_studio_ai_model';
+  const AI_CHATS_KEY = 'dx_studio_ai_saved_chats';
   let aiConversationHistory = []; // Histórico para conversas contínuas
+  let currentChatId = Date.now();
   let isAiLoadingModels = false; // Trava de estado para evitar flood
 
   // Carrega a API Key salva ao iniciar
@@ -1897,6 +2249,369 @@ document.addEventListener('DOMContentLoaded', () => {
     showToast("Modelo alterado!");
   });
 
+  // Função para salvar o chat atual no histórico
+  function saveChatToHistory() {
+    if (aiConversationHistory.length === 0) return;
+    
+    let chats = JSON.parse(localStorage.getItem(AI_CHATS_KEY) || '[]');
+    let currentChat = chats.find(c => c.id === currentChatId);
+    
+    if (!currentChat) {
+      const firstMsg = aiConversationHistory.find(m => m.role === 'user')?.text || 'Nova Conversa';
+      const title = firstMsg.substring(0, 35) + (firstMsg.length > 35 ? '...' : '');
+      
+      currentChat = {
+        id: currentChatId,
+        timestamp: Date.now(),
+        title: title,
+        messages: aiConversationHistory
+      };
+      chats.unshift(currentChat);
+    } else {
+      currentChat.messages = aiConversationHistory;
+      currentChat.timestamp = Date.now();
+      // Move para o topo
+      chats = [currentChat, ...chats.filter(c => c.id !== currentChatId)];
+    }
+    
+    localStorage.setItem(AI_CHATS_KEY, JSON.stringify(chats.slice(0, 50)));
+  }
+
+  // Função para a IA resumir o título automaticamente
+  async function summarizeChatTitle(chatId) {
+    const apiKey = aiApiKey?.value.trim();
+    const modelId = aiModelSelect?.value || "models/gemini-1.5-flash";
+    if (!apiKey || aiConversationHistory.length < 2) return;
+
+    try {
+      const formattedModelId = modelId.startsWith('models/') ? modelId : `models/${modelId}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/${formattedModelId}:generateContent?key=${apiKey}`;
+      
+      const prompt = {
+        contents: [{
+          role: "user",
+          parts: [{ 
+            text: `Baseado nas mensagens abaixo, crie um título curtíssimo (máximo 5 palavras) que resuma o assunto. 
+            Responda APENAS o título, sem pontuação final.
+            
+            [CONVERSA]
+            ${aiConversationHistory.map(m => `${m.role}: ${m.text}`).join('\n')}`
+          }]
+        }]
+      };
+
+      const response = await fetch(url, { method: 'POST', body: JSON.stringify(prompt) });
+      const data = await response.json();
+      const newTitle = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+
+      if (newTitle) {
+        let chats = JSON.parse(localStorage.getItem(AI_CHATS_KEY) || '[]');
+        const chatIndex = chats.findIndex(c => c.id === chatId);
+        if (chatIndex !== -1) {
+          chats[chatIndex].title = newTitle;
+          localStorage.setItem(AI_CHATS_KEY, JSON.stringify(chats));
+          if (aiHistoryPanel.classList.contains('active')) renderAiHistory();
+        }
+      }
+    } catch (e) {
+      console.error("Erro ao resumir título:", e);
+    }
+  }
+
+  function deleteChat(id, e, iconEl) {
+    if (e) e.stopPropagation();
+
+    // Se não estiver em modo de confirmação, ativa o "check" verde
+    if (!iconEl.classList.contains('confirm')) {
+      iconEl.classList.add('confirm', 'fa-check');
+      iconEl.classList.remove('fa-trash');
+      const originalTitle = iconEl.title;
+      iconEl.title = "Clique novamente para confirmar a exclusão";
+
+      // Reverte após 3 segundos se não houver segundo clique
+      setTimeout(() => {
+        if (iconEl && iconEl.classList.contains('confirm')) {
+          iconEl.classList.remove('confirm', 'fa-check');
+          iconEl.classList.add('fa-trash');
+          iconEl.title = originalTitle;
+        }
+      }, 3000);
+      return;
+    }
+
+    // Segundo clique: Executa a exclusão
+    iconEl.classList.remove('fa-check');
+    iconEl.classList.add('fa-spinner', 'fa-spin');
+
+    let chats = JSON.parse(localStorage.getItem(AI_CHATS_KEY) || '[]');
+    chats = chats.filter(c => c.id !== id);
+    localStorage.setItem(AI_CHATS_KEY, JSON.stringify(chats));
+
+    if (currentChatId === id) {
+      startNewChat();
+    } else {
+      renderAiHistory();
+    }
+    showToast("Conversa excluída");
+  }
+
+  function exportChatToMarkdown(id, e) {
+    if (e) e.stopPropagation();
+    const chats = JSON.parse(localStorage.getItem(AI_CHATS_KEY) || '[]');
+    const chat = chats.find(c => c.id === id);
+    if (!chat) return;
+
+    let md = `# Conversa DX Studio: ${chat.title}\n`;
+    md += `Data: ${new Date(chat.timestamp).toLocaleString()}\n\n`;
+    md += `--- \n\n`;
+
+    chat.messages.forEach(msg => {
+      const roleLabel = msg.role === 'user' ? '### 👤 Usuário' : '### 🤖 DX Assistant';
+      md += `${roleLabel}\n\n${msg.text}\n\n---\n\n`;
+    });
+
+    const blob = new Blob([md], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const fileName = `chat_${chat.title.replace(/\s+/g, '_').toLowerCase()}.md`;
+    
+    a.href = url;
+    a.download = fileName;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast("Histórico exportado!");
+  }
+
+  // Função para importar Markdown de volta ao histórico
+  importChatInput?.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target.result;
+      try {
+        // Parsing simples baseado nos seletores usados na exportação
+        const titleMatch = content.match(/^# Conversa DX Studio: (.*)$/m);
+        const title = titleMatch ? titleMatch[1].trim() : "Chat Importado";
+        
+        const messages = [];
+        const msgRegex = /### (👤 Usuário|🤖 DX Assistant)\n\n([\s\S]*?)(?=\n\n---\n\n|$)/g;
+        let match;
+        
+        while ((match = msgRegex.exec(content)) !== null) {
+          messages.push({
+            role: match[1].includes('Usuário') ? 'user' : 'assistant',
+            text: match[2].trim()
+          });
+        }
+
+        if (messages.length === 0) throw new Error("Nenhuma mensagem encontrada no formato DX Studio.");
+
+        let chats = JSON.parse(localStorage.getItem(AI_CHATS_KEY) || '[]');
+        const newChat = {
+          id: Date.now(),
+          timestamp: Date.now(),
+          title: title,
+          messages: messages
+        };
+        
+        chats.unshift(newChat);
+        localStorage.setItem(AI_CHATS_KEY, JSON.stringify(chats.slice(0, 50)));
+        renderAiHistory();
+        showToast("Histórico importado com sucesso!");
+      } catch (err) {
+        showToast("Erro ao importar: Formato inválido.");
+        console.error(err);
+      }
+      importChatInput.value = '';
+    };
+    reader.readAsText(file);
+  });
+
+  // Lógica de Diff Preview
+  let diffPreviewTarget = null;
+  let diffCurrentCm = null;
+  let diffNewCm = null;
+
+  function openDiffModal(targetEditorInst, newCode, langMode) {
+    diffPreviewTarget = targetEditorInst;
+    diffModal.classList.add('active');
+
+    // Inicializa ou limpa editores de diff
+    if (!diffCurrentCm) {
+      diffCurrentCm = CodeMirror($('#diffEditorCurrent'), { theme: currentTheme, readOnly: true, lineNumbers: true });
+      diffNewCm = CodeMirror($('#diffEditorNew'), { theme: currentTheme, readOnly: true, lineNumbers: true });
+    }
+
+    diffCurrentCm.setOption('mode', langMode);
+    diffNewCm.setOption('mode', langMode);
+    
+    const oldCode = targetEditorInst.getValue();
+    diffCurrentCm.setValue(oldCode);
+    diffNewCm.setValue(newCode);
+
+    setTimeout(() => {
+      diffCurrentCm.refresh();
+      diffNewCm.refresh();
+
+      // Aplica realce de cores usando jsdiff
+      if (typeof Diff !== 'undefined') {
+        const changes = Diff.diffLines(oldCode, newCode);
+        let oldLineCur = 0, newLineCur = 0;
+
+        changes.forEach(part => {
+          if (part.added) {
+            for (let i = 0; i < part.count; i++) diffNewCm.addLineClass(newLineCur + i, 'background', 'diff-added-line');
+            newLineCur += part.count;
+          } else if (part.removed) {
+            for (let i = 0; i < part.count; i++) diffCurrentCm.addLineClass(oldLineCur + i, 'background', 'diff-removed-line');
+            oldLineCur += part.count;
+          } else {
+            oldLineCur += part.count;
+            newLineCur += part.count;
+          }
+        });
+      }
+    }, 50);
+
+    confirmDiffBtn.onclick = () => {
+      targetEditorInst.setValue(newCode);
+      if (successSound) successSound.play().catch(() => {});
+      
+      // Dispara o Auto-resumo com barra de progresso
+      generateAutoChangelog(oldCode, newCode);
+      
+      closeDiff();
+      showToast("Alterações aplicadas!");
+    };
+  }
+
+  // Função de Auto-resumo com Barra de Progresso Visual
+  async function generateAutoChangelog(oldCode, newCode) {
+    const apiKey = aiApiKey?.value.trim();
+    const modelId = aiModelSelect?.value || "models/gemini-1.5-flash";
+    const progressContainer = $('#ai-progress-container');
+    const progressBar = $('#ai-progress-bar');
+    
+    if (!apiKey) return;
+
+    try {
+      // Inicia progresso
+      progressContainer?.classList.remove('hidden');
+      if (progressBar) {
+        progressBar.style.width = '30%';
+        progressBar.style.opacity = '1';
+      }
+
+      const formattedModelId = modelId.startsWith('models/') ? modelId : `models/${modelId}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/${formattedModelId}:generateContent?key=${apiKey}`;
+      
+      const prompt = {
+        contents: [{
+          role: "user",
+          parts: [{ 
+            text: `Resuma a seguinte alteração de código em uma única frase técnica para um changelog. Responda APENAS o resumo.
+            [ANTES] ${oldCode.substring(0, 800)}
+            [DEPOIS] ${newCode.substring(0, 800)}`
+          }]
+        }]
+      };
+
+      if (progressBar) progressBar.style.width = '70%';
+
+      const response = await fetch(url, { method: 'POST', body: JSON.stringify(prompt) });
+      const data = await response.json();
+      
+      if (progressBar) progressBar.style.width = '100%';
+
+      const summary = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+
+      if (summary) {
+        appendAiMessage(`**Changelog:** ${summary}`, 'assistant');
+      }
+
+      // Finaliza e esconde a barra com suavidade
+      setTimeout(() => {
+        if (progressBar) progressBar.style.opacity = '0';
+        setTimeout(() => {
+          progressContainer?.classList.add('hidden');
+          if (progressBar) progressBar.style.width = '0%';
+        }, 300);
+      }, 1000);
+
+    } catch (e) {
+      console.error("Erro no Auto-resumo:", e);
+      progressContainer?.classList.add('hidden');
+    }
+  }
+
+  function closeDiff() {
+    diffModal.classList.remove('active');
+    diffPreviewTarget = null;
+  }
+
+  [cancelDiffBtn, closeDiffBtn].forEach(btn => btn?.addEventListener('click', closeDiff));
+
+  function startNewChat() {
+    saveChatToHistory();
+    currentChatId = Date.now();
+    aiConversationHistory = [];
+    aiChatHistory.innerHTML = '<div class="ai-message assistant">Olá! Eu tenho acesso ao seu código atual. Como posso ajudar você hoje?</div>';
+    aiHistoryPanel.classList.remove('active');
+    aiChatHistory.style.display = 'flex';
+    $('.ai-chat-input-wrap').style.display = 'block';
+    showToast("Novo chat iniciado");
+  }
+
+  function renderAiHistory() {
+    const chats = JSON.parse(localStorage.getItem(AI_CHATS_KEY) || '[]');
+    aiHistoryList.innerHTML = chats.length ? '' : '<div class="hint" style="padding:15px">Nenhum chat salvo.</div>';
+    
+    chats.forEach(chat => {
+      const item = document.createElement('div');
+      item.className = 'ai-history-item';
+      item.innerHTML = `
+        <div class="chat-info">
+          <span class="title">${chat.title}</span>
+          <span class="date">${new Date(chat.timestamp).toLocaleString()}</span>
+        </div>
+        <i class="fas fa-file-download export-chat" title="Exportar Markdown"></i>
+        <i class="fas fa-trash delete-chat" title="Excluir Conversa"></i>
+      `;
+      
+      item.querySelector('.chat-info').onclick = () => loadSavedChat(chat.id);
+      item.querySelector('.export-chat').onclick = (e) => exportChatToMarkdown(chat.id, e);
+      item.querySelector('.delete-chat').onclick = (e) => deleteChat(chat.id, e, e.target);
+      
+      aiHistoryList.appendChild(item);
+    });
+  }
+
+  function loadSavedChat(id) {
+    const chats = JSON.parse(localStorage.getItem(AI_CHATS_KEY) || '[]');
+    const chat = chats.find(c => c.id === id);
+    if (!chat) return;
+
+    currentChatId = chat.id;
+    aiConversationHistory = chat.messages;
+    aiChatHistory.innerHTML = '';
+    aiConversationHistory.forEach(msg => appendAiMessage(msg.text, msg.role));
+    
+    aiHistoryPanel.classList.remove('active');
+    aiChatHistory.style.display = 'flex';
+    $('.ai-chat-input-wrap').style.display = 'block';
+    aiChatHistory.scrollTop = aiChatHistory.scrollHeight;
+  }
+
+  newAiChatBtn?.addEventListener('click', startNewChat);
+  showAiHistoryBtn?.addEventListener('click', () => {
+    const isVisible = aiHistoryPanel.classList.toggle('active');
+    aiChatHistory.style.display = isVisible ? 'none' : 'flex';
+    $('.ai-chat-input-wrap').style.display = isVisible ? 'none' : 'block';
+    if (isVisible) renderAiHistory();
+  });
+
   // Atalho para enviar mensagem com Ctrl+Enter (ou Cmd+Enter no Mac)
   aiChatInput?.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
@@ -1926,6 +2641,32 @@ document.addEventListener('DOMContentLoaded', () => {
       content: inst.getValue(),
       mode: mode
     };
+  }
+
+  // Função Coletora de Contexto (Data Orchestration)
+  function getUnifiedContext(userQuery) {
+    const filesContext = [];
+    const isSingle = modeSelect?.value === 'single';
+
+    if (isSingle && editor) {
+      filesContext.push({ name: 'index.html', content: editor.getValue() });
+    } else {
+      document.querySelectorAll('.tab').forEach(tab => {
+        const mode = tab.dataset.mode;
+        if (mode === 'settings' || tab.style.display === 'none') return;
+        
+        const inst = editors[mode];
+        if (inst && typeof inst.getValue === 'function') {
+          const fileName = tab.textContent.replace('X', '').trim();
+          filesContext.push({ name: fileName, content: inst.getValue() });
+        }
+      });
+    }
+
+    const activeTab = document.querySelector('.tab.active');
+    const activeFile = activeTab ? activeTab.textContent.replace('X', '').trim() : (isSingle ? 'index.html' : '');
+
+    return { files: filesContext, activeFile, userQuery };
   }
 
   function appendAiMessage(text, role = 'assistant') {
@@ -1998,37 +2739,9 @@ document.addEventListener('DOMContentLoaded', () => {
           };
           
           applyBtn.onclick = () => {
-            let codeToApply = codeText;
-            const previousCode = targetInst.getValue();
-
-            // No modo Single (HTML), envolvemos CSS/JS em tags caso não existam no snippet sugerido
-            if (isSingle) {
-              if (langMode === 'css' && !codeText.includes('<style')) {
-                codeToApply = `\n<style>\n${codeText}\n</style>`;
-              } else if (langMode === 'javascript' && !codeText.includes('<script')) {
-                codeToApply = `\n<script>\n${codeText}\n<\/script>`;
-              }
-            }
-
-            // Anexa o código ao final do arquivo para segurança, preservando o código existente
-            targetInst.setValue(previousCode + (previousCode.trim() ? "\n\n" : "") + codeToApply);
-
-            // Toca som de sucesso
-            if (successSound) successSound.play().catch(() => {});
-            
-            // Limpa o destaque
-            if (pendingAiEditor) pendingAiEditor.removeLineClass(pendingAiLine - 1, 'background', 'ai-suggested-highlight');
-            
+            // Em vez de aplicar direto, abre o preview de diff
+            openDiffModal(targetInst, codeText, langMode);
             if (!isSingle) switchTab(langMode);
-            
-            showToast(
-              `Código aplicado ao editor ${isSingle ? 'único' : langMode}!`, 
-              "Desfazer", 
-              () => {
-                targetInst.setValue(previousCode);
-                showToast("Alteração desfeita.");
-              }
-            );
           };
           actionContainer.appendChild(applyBtn);
         }
@@ -2079,19 +2792,8 @@ document.addEventListener('DOMContentLoaded', () => {
     appendAiMessage(text, 'user');
     aiChatInput.value = '';
 
-    // CONTEXTO INTELIGENTE: Captura o estado atual de todos os editores.
-    // Isso permite que a IA veja a relação entre HTML, CSS e JS.
-    const projectContext = `
---- CÓDIGO ATUAL DO PROJETO ---
-HTML:
-${editorHtmlInstance.getValue()}
-
-CSS:
-${editorCssInstance.getValue()}
-
-JS:
-${editorJsInstance.getValue()}
-    `.trim();
+    // Orquestração do Contexto Unificado
+    const contextData = getUnifiedContext(text);
 
     try {
       // Feedback visual de "pensando"
@@ -2118,15 +2820,11 @@ ${editorJsInstance.getValue()}
       const currentTurn = {
         role: "user",
         parts: [{ 
-          text: `Você é o DX AI Assistant, um especialista em desenvolvimento web.
-          Você tem acesso ao código completo do projeto do usuário abaixo.
-          Sempre que sugerir cores ou estilos, prefira paletas modernas como Dracula, Monokai ou Nord, mantendo a consistência com a IDE.
+          text: `Você é o DX AI Assistant. Analise o contexto do projeto em JSON e responda ao usuário.
+          Sempre use blocos de código com a linguagem especificada (ex: \`\`\`javascript).
           
           [CONTEXTO DO PROJETO]
-          ${projectContext}
-          
-          [PERGUNTA DO USUÁRIO]
-          ${text}` 
+          ${JSON.stringify(contextData, null, 2)}`
         }]
       };
 
@@ -2165,6 +2863,13 @@ ${editorJsInstance.getValue()}
         // MEMÓRIA DA CONVERSA: Adiciona o par pergunta/resposta ao histórico local
         aiConversationHistory.push({ role: 'user', text: text });
         aiConversationHistory.push({ role: 'assistant', text: aiResponse });
+        
+        saveChatToHistory();
+
+        // Resumo automático: Dispara quando a conversa tem 4 mensagens (2 trocas)
+        if (aiConversationHistory.length === 4) {
+          summarizeChatTitle(currentChatId);
+        }
 
         // Otimização: Mantém apenas as últimas 10 trocas
         if (aiConversationHistory.length > 10) {
@@ -2211,6 +2916,11 @@ ${editorJsInstance.getValue()}
     if (data.type in consoleCounts) {
       consoleCounts[data.type]++;
       updateConsoleCountersUI();
+    }
+
+    // REQUISITO: Espelhar erros do console no Terminal automaticamente
+    if (data.type === 'error') {
+      appendTerminal(`[Console Error] ${data.payload.filter(p => typeof p === 'string').join(' ')}`, 'error');
     }
 
     const prefix = data.type === 'error' ? '❌' : data.type === 'warn' ? '⚠️' : '•';
@@ -2263,6 +2973,29 @@ ${editorJsInstance.getValue()}
   window.addEventListener('keydown', (e) => {
     const isMac = navigator.platform.toLowerCase().includes('mac');
     const mod = isMac ? e.metaKey : e.ctrlKey;
+
+    // Ctrl + Shift + D: Command Palette
+    if (mod && e.shiftKey && e.key.toLowerCase() === 'd') {
+      e.preventDefault();
+      openCommandPalette();
+    }
+
+    // Ctrl + ` : Mostrar/Ocultar Terminal (Toggle)
+    if (mod && e.key === '`') {
+      e.preventDefault();
+      const terminal = $('#terminalWrap');
+      if (terminal) {
+        const isHidden = terminal.offsetHeight <= 0;
+        if (isHidden) {
+          terminal.style.height = terminal.dataset.lastHeight || '150px';
+        } else {
+          terminal.dataset.lastHeight = terminal.style.height;
+          terminal.style.height = '0px';
+        }
+        saveLayout();
+        editorInstances.forEach(inst => inst.refresh());
+      }
+    }
 
     // Ctrl + Enter: Rodar o código
     if (mod && e.key === 'Enter') {
@@ -2392,6 +3125,7 @@ ${editorJsInstance.getValue()}
   const savedPanelsFlex = JSON.parse(localStorage.getItem(PANELS_FLEX_KEY) || 'null');
   const savedConsoleHeight = localStorage.getItem(CONSOLE_HEIGHT_KEY);
   const savedTabBarHeight = localStorage.getItem(TABBAR_HEIGHT_KEY);
+  const savedTerminalHeight = localStorage.getItem(TERMINAL_HEIGHT_KEY);
   const savedTabWidths = JSON.parse(localStorage.getItem(TAB_WIDTHS_KEY) || '{}');
 
   // Restaura a largura da sidebar e o estado do ícone do explorador
@@ -2414,7 +3148,11 @@ ${editorJsInstance.getValue()}
   }
   if (savedConsoleHeight && consoleEl) consoleEl.style.maxHeight = savedConsoleHeight;
   if (savedTabBarHeight && $('#tabBar')) $('#tabBar').style.height = savedTabBarHeight;
+  if (savedTerminalHeight && $('#terminalWrap')) $('#terminalWrap').style.height = savedTerminalHeight;
   
+  appendTerminal('DX Studio Terminal - Pronto para comandos.', 'info');
+  initMinimap();
+
   // Restaurar larguras das abas
   Object.keys(savedTabWidths).forEach(mode => {
     const tab = document.querySelector(`.tab[data-mode="${mode}"]`);

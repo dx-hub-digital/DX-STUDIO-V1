@@ -78,14 +78,18 @@
       </div>
 
       <!-- Visualização da IA -->
-      <div id="view-ai">
-        <div class="sidebar-header">DX AI Assistant</div>
+      <div id="ai-sidebar">
+        <div class="sidebar-header">IA Assistant</div>
         <div class="ai-chat-container">
           <div class="ai-config-section">
             <div class="ai-status-box">
               <span class="ai-status-dot active"></span>
               <span class="ai-status-text">Gemini 1.5 Flash</span>
-              <i class="fas fa-cog ai-config-toggle" id="toggleAiConfig" title="Configurar API"></i>
+              <div class="ai-status-actions">
+                <i class="fas fa-plus-circle ai-action-btn" id="newAiChatBtn" title="Novo Chat"></i>
+                <i class="fas fa-history ai-action-btn" id="showAiHistoryBtn" title="Ver Histórico"></i>
+                <i class="fas fa-cog ai-config-toggle" id="toggleAiConfig" title="Configurar API"></i>
+              </div>
             </div>
             <div id="aiConfigPanel" class="ai-config-panel hidden">
               <label>API Key</label>
@@ -103,7 +107,16 @@
             </div>
           </div>
 
-          <div id="aiChatHistory" class="ai-chat-history">
+          <div id="ai-progress-container" class="ai-progress-container hidden">
+            <div id="ai-progress-bar" class="ai-progress-bar"></div>
+          </div>
+
+          <div id="aiHistoryPanel" class="ai-history-panel">
+            <div class="sidebar-header">Conversas Salvas</div>
+            <div id="aiHistoryList" class="history-list"></div>
+          </div>
+
+          <div id="chat-messages" class="ai-chat-history">
             <div class="ai-message assistant">Olá! Eu tenho acesso ao seu código atual. Como posso ajudar você hoje?</div>
           </div>
 
@@ -131,14 +144,29 @@
         <div id="tabBarResizerV" class="tab-bar-resizer-v"></div>
       </div>
 
-      <div id="editor" class="editor singleEditor"></div>
-      <div class="fileEditors" id="fileEditors">
-        <div id="editorHtml" class="editor singleEditor active"></div>
-        <div id="editorCss" class="editor singleEditor"></div>
-        <div id="editorJs" class="editor singleEditor"></div>
-        <div id="editorPhp" class="editor singleEditor"></div>
-        <div id="editorPy" class="editor singleEditor"></div>
-        
+      <div class="editor-main-content">
+        <div id="editor" class="editor singleEditor"></div>
+        <div class="fileEditors" id="fileEditors">
+          <div id="editorHtml" class="editor singleEditor active"></div>
+          <div id="editorCss" class="editor singleEditor"></div>
+          <div id="editorJs" class="editor singleEditor"></div>
+          <div id="editorPhp" class="editor singleEditor"></div>
+          <div id="editorPy" class="editor singleEditor"></div>
+        </div>
+        <div id="minimap" class="minimap-sidebar" title="Visão Geral do Código"></div>
+      </div>
+
+      <div class="resizer-v" id="resizerTerminal"></div>
+      <div class="terminal-wrap" id="terminalWrap">
+        <div class="terminal-header">Terminal</div>
+        <div id="terminalOutput" class="terminal-output"></div>
+        <div class="terminal-input-line">
+          <span class="terminal-prompt">DX-STUDIO ></span>
+          <input type="text" id="terminalInput" placeholder="Digite 'help' para comandos" spellcheck="false">
+        </div>
+      </div>
+
+      <div id="editorSettings" class="singleEditor">
         <div id="editorSettings" class="singleEditor">
            <div class="settings-container">
               <div class="storage-meter">
@@ -299,7 +327,40 @@
   <audio id="shutterSound" src="https://www.soundjay.com/mechanical/camera-shutter-click-01.mp3" preload="auto"></audio>
   <audio id="successSound" src="https://www.soundjay.com/buttons/button-10.mp3" preload="auto"></audio>
 
+  <!-- Modal de Diff Preview -->
+  <div id="diffModal" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div class="brand"><span class="dot dot-accent2"></span> <span>Preview de Alterações</span></div>
+        <button id="closeDiffBtn" class="btn tiny danger" title="Fechar Preview"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="diff-container">
+        <div class="diff-box">
+          <div class="diff-label">Código Atual</div>
+          <div id="diffEditorCurrent" class="diff-editor-target"></div>
+        </div>
+        <div class="diff-box">
+          <div class="diff-label">Sugestão da IA (Novo)</div>
+          <div id="diffEditorNew" class="diff-editor-target"></div>
+        </div>
+      </div>
+      <div class="modal-header modal-footer">
+        <button id="cancelDiffBtn" class="btn">Cancelar</button>
+        <button id="confirmDiffBtn" class="btn primary btn-success"><i class="fas fa-check"></i> Aplicar Alterações</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Command Palette -->
+  <div id="commandPalette" class="command-palette-overlay">
+    <div class="command-palette">
+      <input type="text" id="commandPaletteInput" placeholder="Digite um comando..." spellcheck="false">
+      <div id="commandPaletteList" class="command-palette-list"></div>
+    </div>
+  </div>
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jsdiff/5.1.0/diff.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/codemirror.min.js"></script>
