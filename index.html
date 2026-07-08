@@ -56,12 +56,12 @@
   </header>
 
   <main class="layout">
-    <aside class="activity-bar">
-      <i class="fas fa-copy active" title="Explorador"></i>
-      <i class="fas fa-search" title="Pesquisar"></i>
-      <i class="fas fa-robot" title="IA Assistant"></i>
-      <i class="fas fa-code-branch" title="Controle de Código"></i>
-      <i class="fas fa-th-large" title="Extensões"></i>
+    <aside class="activity-bar" id="activityBar">
+      <button class="activity-bar-button" id="explorerToggleBtn" title="Explorador"><i class="fas fa-copy" id="explorerIcon"></i></button>
+      <button class="activity-bar-button" id="searchBtn" title="Pesquisar"><i class="fas fa-search"></i></button>
+      <button class="activity-bar-button" id="aiAssistantBtn" title="IA Assistant"><i class="fas fa-robot"></i></button>
+      <button class="activity-bar-button" id="sourceControlBtn" title="Controle de Código"><i class="fas fa-code-branch"></i></button>
+      <button class="activity-bar-button" id="extensionsBtn" title="Extensões"><i class="fas fa-th-large"></i></button>
     </aside>
 
     <div class="sidebar" id="sidebar">
@@ -156,6 +156,7 @@
         <div id="minimap" class="minimap-sidebar" title="Visão Geral do Código"></div>
       </div>
 
+      <!-- Terminal e seu redimensionador movidos para fora de editor-main-content -->
       <div class="resizer-v" id="resizerTerminal"></div>
       <div class="terminal-wrap" id="terminalWrap">
         <div class="terminal-header">Terminal</div>
@@ -318,6 +319,7 @@
   <div id="flashEffect" class="flash-effect"></div>
 
   <div id="tabContextMenu" class="context-menu">
+    <div class="menu-item" id="menuCloseTab"><i class="fas fa-times"></i> Fechar Aba</div>
     <div class="menu-item" id="menuCloseOthers"><i class="fas fa-clone"></i> Fechar Outras</div>
     <div class="menu-item" id="menuCloseAll"><i class="fas fa-times-circle"></i> Fechar Todas</div>
   </div>

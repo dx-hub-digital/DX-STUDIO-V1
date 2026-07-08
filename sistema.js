@@ -34,6 +34,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const consoleWrap = $('.consoleWrap');
   const contextMenu = $('#tabContextMenu');
 
+  // Elementos da Activity Bar
+  const explorerToggleBtn = $('#explorerToggleBtn');
+  const explorerIcon = $('#explorerIcon'); // O <i> dentro do botão do explorador
+  const aiAssistantBtn = $('#aiAssistantBtn');
+
   // Outros elementos da UI
   const toggleConsoleBtn = $('#toggleConsoleBtn'), toggleAllObjectsBtn = $('#toggleAllObjectsBtn');
   const fullscreenBtn = $('#fullscreenBtn'), exportConsoleBtn = $('#exportConsoleBtn');
@@ -92,6 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const TABBAR_HEIGHT_KEY = 'dx_studio_tabbar_height';
   const TERMINAL_HEIGHT_KEY = 'dx_studio_terminal_height';
   const TAB_WIDTHS_KEY = 'dx_studio_tab_widths';
+  const LAST_ACTIVE_ACTIVITY_BAR_ITEM_KEY = 'dx_studio_last_active_activity_bar_item';
   const TAB_ORDER_KEY = 'dx_studio_tab_order'; // Nova chave para a ordem das abas
   const TERMINAL_HISTORY_KEY = 'dx_studio_terminal_history';
 
@@ -575,6 +581,27 @@ document.addEventListener('DOMContentLoaded', () => {
     return container;
   }
 
+  // Função auxiliar para obter a instância ativa do CodeMirror
+  function getCurrentCodeMirrorInstance() {
+    let currentInstance = null;
+
+    if (modeSelect.value === 'single' && editor) {
+      currentInstance = editor;
+    } else {
+      const activeTab = document.querySelector('.tab.active');
+      if (activeTab) {
+        const mode = activeTab.dataset.mode;
+        currentInstance = editors[mode];
+      }
+    }
+
+    // Ensure the returned object is actually a CodeMirror instance
+    if (currentInstance && typeof currentInstance.setOption === 'function') {
+      return currentInstance;
+    }
+    return null;
+  }
+
   function getEditorPanelIdFromMode(mode) {
     return {
       'htmlmixed': 'editorHtml',
@@ -587,6 +614,11 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function handleDragStart(e) {
+    // Impede arrastar a aba de configurações
+    if (this.dataset.mode === 'settings') {
+      e.preventDefault();
+      return;
+    }
     draggedTab = this;
     const mode = this.dataset.mode;
     const editorPanelId = getEditorPanelIdFromMode(mode);
@@ -661,25 +693,118 @@ document.addEventListener('DOMContentLoaded', () => {
     saveLayout(); // Salva a nova ordem das abas após o drop
   }
 
-  function toggleSidebar(forceOpen = false) {
+  function toggleSidebar(shouldBeOpen, targetViewId) {
     const sidebar = $('#sidebar');
     if (!sidebar) return;
 
-    const currentWidth = sidebar.offsetWidth;
-    if (currentWidth > 0 && !forceOpen) { // Sidebar está aberta, vamos fechar
-      localStorage.setItem(EXPLORER_WIDTH_KEY, sidebar.style.width || '200px');
-      sidebar.style.width = '0px';
-      if (resizerS) resizerS.style.display = 'none'; // Esconde o resizer
-      document.querySelectorAll('.activity-bar i').forEach(i => i.classList.remove('active'));
-    } else { // Sidebar está fechada, vamos abrir
-      const lastWidth = localStorage.getItem(EXPLORER_WIDTH_KEY) || '200px';
-      sidebar.style.width = lastWidth;
-      if (resizerS) resizerS.style.display = 'block'; // Mostra o resizer
+    const isCurrentlyOpen = sidebar.offsetWidth > 0;
+    const currentActiveView = localStorage.getItem(LAST_ACTIVE_ACTIVITY_BAR_ITEM_KEY);
+
+    // 1. Determinar o estado final de abertura/fechamento.
+    if (shouldBeOpen === undefined) {
+      shouldBeOpen = !isCurrentlyOpen;
     }
+
+    // 2. Determinar a visualização de destino.
+    const effectiveTargetViewId = targetViewId || currentActiveView || 'explorer';
+
+    // 3. Evitar operações desnecessárias.
+    if (isCurrentlyOpen === shouldBeOpen && (!targetViewId || currentActiveView === effectiveTargetViewId)) {
+      return;
+    }
+
+    // Lógica de fechar
+    if (!shouldBeOpen) {
+      if (isCurrentlyOpen) {
+        localStorage.setItem(EXPLORER_WIDTH_KEY, sidebar.style.width || '250px');
+        sidebar.style.width = '0px';
+        if (resizerS) resizerS.style.display = 'none';
+      }
+      if (explorerIcon) explorerIcon.className = 'fas fa-copy';
+      deactivateAllActivityBarButtons();
+      saveLayout();
+      editorInstances.forEach(inst => inst.refresh());
+      return;
+    }
+
+    // Lógica de abrir (ou trocar de view)
+    if (!isCurrentlyOpen) {
+      const lastWidth = localStorage.getItem(EXPLORER_WIDTH_KEY) || '250px';
+      sidebar.style.width = lastWidth;
+      if (resizerS) resizerS.style.display = 'block';
+    }
+
+    const explorerView = $('#view-explorer');
+    const aiView = $('#ai-sidebar');
+
+    deactivateAllActivityBarButtons();
+
+    if (effectiveTargetViewId === 'ai' && aiAssistantBtn) {
+      if (explorerView) explorerView.style.display = 'none';
+      if (aiView) aiView.style.display = 'block';
+      aiAssistantBtn.classList.add('active');
+      if (explorerIcon) explorerIcon.className = 'fas fa-copy';
+      localStorage.setItem(LAST_ACTIVE_ACTIVITY_BAR_ITEM_KEY, 'ai');
+      
+      const key = aiApiKey?.value.trim();
+      if (key && aiModelSelect && aiModelSelect.options.length <= 1) {
+        carregarModelos(key);
+      }
+    } else { // Padrão para explorador
+      if (explorerView) explorerView.style.display = 'block';
+      if (aiView) aiView.style.display = 'none';
+      if (explorerToggleBtn) explorerToggleBtn.classList.add('active');
+      if (explorerIcon) explorerIcon.className = 'fas fa-chevron-left';
+      localStorage.setItem(LAST_ACTIVE_ACTIVITY_BAR_ITEM_KEY, 'explorer');
+    }
+
     saveLayout();
     // Força os editores a recalcularem o tamanho para evitar bugs de clique/seleção
     editorInstances.forEach(inst => inst.refresh());
   }
+
+  // Função auxiliar para desativar todos os botões da barra de atividades
+  function deactivateAllActivityBarButtons() {
+    document.querySelectorAll('.activity-bar-button').forEach(button => {
+      button.classList.remove('active');
+    });
+  }
+
+  // Listener para o botão do Explorador
+  explorerToggleBtn?.addEventListener('click', () => {
+    const sidebarIsOpen = $('#sidebar').offsetWidth > 0;
+    const explorerIsActive = explorerToggleBtn.classList.contains('active');
+
+    if (sidebarIsOpen && explorerIsActive) {
+      toggleSidebar(false); // Fecha se já estiver aberto e ativo
+    } else {
+      toggleSidebar(true, 'explorer'); // Abre ou ativa o explorador
+    }
+  });
+
+  // Listener para o botão do AI Assistant
+  aiAssistantBtn?.addEventListener('click', () => {
+    const sidebarIsOpen = $('#sidebar').offsetWidth > 0;
+    const aiIsActive = aiAssistantBtn.classList.contains('active');
+
+    if (sidebarIsOpen && aiIsActive) {
+      toggleSidebar(false); // Fecha se já estiver aberto e ativo
+    } else {
+      toggleSidebar(true, 'ai'); // Abre ou ativa a IA
+    }
+  });
+
+  // Listeners para os outros botões da barra de atividades
+  document.querySelectorAll('.activity-bar-button').forEach(button => {
+    if (button.id === 'explorerToggleBtn' || button.id === 'aiAssistantBtn') return;
+    button.addEventListener('click', () => {
+      showToast(`${button.title}: Em desenvolvimento...`);
+      toggleSidebar(false); // Fecha a barra lateral (comportamento padrão do VS Code)
+      deactivateAllActivityBarButtons();
+      button.classList.add('active');
+      localStorage.setItem(LAST_ACTIVE_ACTIVITY_BAR_ITEM_KEY, button.id);
+    });
+  });
 
   // Lógica de Redimensionamento Horizontal
   resizerH?.addEventListener('mousedown', (e) => {
@@ -731,9 +856,10 @@ document.addEventListener('DOMContentLoaded', () => {
       consoleEl.style.maxHeight = `${Math.max(50, consoleHeight - 40)}px`;
     }
     if (isResizingTerminal) {
-      const panelRect = edPanel.getBoundingClientRect();
-      let terminalHeight = panelRect.bottom - e.clientY - $('#statusbar').offsetHeight;
+      const editorPanelRect = edPanel.getBoundingClientRect();
+      let terminalHeight = editorPanelRect.height - (e.clientY - editorPanelRect.top);
       if (terminalHeight < 30) terminalHeight = 0;
+      if (terminalHeight > editorPanelRect.height - 100) terminalHeight = editorPanelRect.height - 100; // Limita a altura máxima
       $('#terminalWrap').style.height = `${Math.max(0, terminalHeight)}px`;
     }
     if (isResizingTabBar) {
@@ -1015,20 +1141,6 @@ document.addEventListener('DOMContentLoaded', () => {
     localStorage.setItem(TAB_WIDTHS_KEY, JSON.stringify(widths));
   }
 
-  function toggleSidebar() {
-    const sidebar = $('#sidebar');
-    if (!sidebar) return;
-    const currentWidth = sidebar.offsetWidth;
-    if (currentWidth > 0) {
-      localStorage.setItem('dx_studio_last_sidebar_width', sidebar.style.width || '200px');
-      sidebar.style.width = '0px';
-    } else {
-      const lastWidth = localStorage.getItem('dx_studio_last_sidebar_width') || '200px';
-      sidebar.style.width = lastWidth;
-    }
-    saveLayout();
-  }
-
   function resetLayout() {
     if (edPanel) edPanel.style.flex = "1.2";
     if (prePanel) prePanel.style.flex = "0.9";
@@ -1264,36 +1376,34 @@ document.addEventListener('DOMContentLoaded', () => {
     const editorSettings = $('#editorSettings');
     
     if (mode === 'settings') {
-      if (editorMainContent) editorMainContent.style.display = 'none';
+      if (editorMainContent) editorMainContent.style.display = 'none'; // Esconde o editor e o terminal
+      if (editorSettings) editorSettings.style.display = 'flex'; // Mostra as configurações
+      if (editorSettings) editorSettings.classList.add('active');
+      updateSettingsUI();
     } else {
-      if (editorMainContent) editorMainContent.style.display = 'flex';
-      if (editorSettings) editorSettings.style.display = 'none';
-    }
+      // Garante que as configurações estejam escondidas ao mudar para um editor de código
+      if (editorSettings) {
+        editorSettings.style.display = 'none';
+        editorSettings.classList.remove('active');
+      }
+      if (editorMainContent) editorMainContent.style.display = 'flex'; // Mostra o editor e o terminal
+      
+      // Esconde todos os editores de código antes de mostrar o ativo
+      document.querySelectorAll('.fileEditors .singleEditor').forEach(ed => {
+        ed.classList.remove('active');
+        ed.style.display = 'none';
+      });
 
-    // Esconde todos os editores e ativa o correto
-    const allEditors = document.querySelectorAll('.fileEditors .singleEditor');
-    allEditors.forEach(ed => {
-      ed.classList.remove('active');
-      ed.style.display = 'none';
-    });
-
-    const targetId = {
-      'htmlmixed': 'editorHtml', 'css': 'editorCss', 'javascript': 'editorJs',
-      'php': 'editorPhp', 'python': 'editorPy', 'settings': 'editorSettings'
-    }[mode] || mode; // Fallback para IDs dinâmicos
-
-    const targetEditor = document.getElementById(targetId);
-    if (targetEditor) {
-      targetEditor.classList.add('active');
-      targetEditor.style.display = 'block';
-      // Força o CodeMirror a se redimensionar corretamente
-      setTimeout(() => {
-        const inst = editors[mode];
-        if (inst && typeof inst.refresh === 'function') inst.refresh();
-        if (mode === 'settings') updateSettingsUI();
-      }, 10);
+      const targetId = getEditorPanelIdFromMode(mode) || mode;
+      const targetEditor = document.getElementById(targetId);
+      if (targetEditor) {
+        targetEditor.classList.add('active');
+        targetEditor.style.display = 'block';
+        setTimeout(() => editors[mode]?.refresh(), 10);
+      }
     }
     
+    localStorage.setItem('dx_studio_last_active_tab_mode', mode); // Salva a aba ativa
     setStatus(`Editando: ${mode.toUpperCase()}`);
     updateRecentFiles(mode);
     updateSidebarFileList();
@@ -1763,6 +1873,8 @@ document.addEventListener('DOMContentLoaded', () => {
     { id: 'reset', label: 'Resetar Layout', icon: 'fa-sync-alt', action: resetLayout, shortcut: '' },
     { id: 'settings', label: 'Abrir Configurações', icon: 'fa-cog', action: () => switchTab('settings'), shortcut: '' }
   ];
+  commands.push({ id: 'find', label: 'Buscar no Editor', icon: 'fa-search', action: () => { const cm = getCurrentCodeMirrorInstance(); if (cm && CodeMirror.commands.findPersistent) CodeMirror.commands.findPersistent(cm); else showToast('Nenhum editor ativo para buscar ou funcionalidade de busca não disponível.'); }, shortcut: 'Ctrl+F' });
+  commands.push({ id: 'replace', label: 'Substituir no Editor', icon: 'fa-exchange-alt', action: () => { const cm = getCurrentCodeMirrorInstance(); if (cm && CodeMirror.commands.replace) CodeMirror.commands.replace(cm); else showToast('Nenhum editor ativo para substituir ou funcionalidade de substituição não disponível.'); }, shortcut: 'Ctrl+H' });
 
   let selectedCommandIndex = 0;
   let filteredCommands = [];
@@ -1946,16 +2058,35 @@ document.addEventListener('DOMContentLoaded', () => {
     tab.addEventListener('click', (e) => {
       if (e.target.closest('.close-tab')) {
         e.stopPropagation();
-        const mode = tab.getAttribute('data-mode');
-        if (confirm(`Deseja fechar ${mode}?`)) {
+        const modeToClose = tab.getAttribute('data-mode');
+        if (confirm(`Deseja fechar ${modeToClose}?`)) {
+          const wasActive = tab.classList.contains('active');
+
           tab.style.display = 'none';
-          const targetId = {
-            'htmlmixed': 'editorHtml', 'css': 'editorCss', 'javascript': 'editorJs',
-            'php': 'editorPhp', 'python': 'editorPy', 'settings': 'editorSettings'
-          }[mode];
-          document.getElementById(targetId).style.display = 'none';
-          setStatus(`Aba ${mode} fechada.`);
+          const targetId = getEditorPanelIdFromMode(modeToClose);
+          if (targetId) {
+            const editorPanelToHide = document.getElementById(targetId);
+            if (editorPanelToHide) {
+              editorPanelToHide.style.display = 'none';
+              editorPanelToHide.classList.remove('active');
+            }
+          }
+          setStatus(`Aba ${modeToClose} fechada.`);
           updateSidebarFileList();
+
+          if (wasActive) {
+            // Encontra uma nova aba para ativar
+            const visibleTabs = Array.from(document.querySelectorAll('.tab'))
+                                  .filter(t => t.style.display !== 'none' && t.id !== 'addTabBtn');
+            if (visibleTabs.length > 0) {
+              switchTab(visibleTabs.getAttribute('data-mode'));
+            } else {
+              // Se não houver abas de código, tenta ativar a aba de configurações
+              if (document.querySelector('.tab[data-mode="settings"]').style.display !== 'none') {
+                  switchTab('settings');
+              }
+            }
+          }
         }
         return;
       }
@@ -2099,48 +2230,6 @@ document.addEventListener('DOMContentLoaded', () => {
       if (activeTab) switchTab(activeTab.getAttribute('data-mode'));
     }
     setStatus(`Modo: ${nextMode}.`);
-  });
-
-  // Ativa os ícones da Activity Bar (Barra Lateral Esquerda) e gerencia a sidebar
-  document.querySelectorAll('.activity-bar i').forEach(icon => {
-    icon.addEventListener('click', () => {
-      const title = icon.title;
-      const sidebar = document.getElementById('sidebar');
-      const explorerView = $('#view-explorer');
-      const aiView = $('#view-ai');
-      const isSidebarOpen = sidebar.offsetWidth > 0;
-      const isActive = icon.classList.contains('active');
-
-      // Se clicar no ícone que já está ativo e a sidebar estiver aberta, fecha
-      if (isActive && isSidebarOpen) {
-        toggleSidebar();
-        return;
-      }
-
-      // Lógica de troca de telas para funcionalidades implementadas
-      if (title === 'Explorador' || title === 'IA Assistant') {
-        document.querySelectorAll('.activity-bar i').forEach(i => i.classList.remove('active'));
-        icon.classList.add('active');
-
-        if (title === 'Explorador') {
-          explorerView.style.display = 'block';
-          if ($('#ai-sidebar')) $('#ai-sidebar').style.display = 'none';
-        } else {
-          explorerView.style.display = 'none';
-          if ($('#ai-sidebar')) $('#ai-sidebar').style.display = 'block';
-          const key = aiApiKey?.value.trim();
-          if (key && aiModelSelect && aiModelSelect.options.length <= 1) carregarModelos(key);
-        }
-
-        // Abre a sidebar apenas se ela estiver fechada
-        if (!isSidebarOpen) toggleSidebar(true);
-      } else {
-        // Telas não implementadas
-        showToast(`${title}: Em desenvolvimento...`);
-      }
-      
-      editorInstances.forEach(inst => inst.refresh());
-    });
   });
 
   // Lógica do DX AI Assistant
@@ -2912,6 +3001,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  // Foca no input do terminal ao clicar em qualquer lugar da sua área
+  const terminalWrap = $('#terminalWrap');
+  terminalWrap?.addEventListener('click', (e) => {
+    // Evita focar se o usuário estiver selecionando texto
+    if (window.getSelection().toString() === '') {
+      terminalInput?.focus();
+    }
+  });
+
   // Ativa o colapso das seções na Sidebar (Chevron)
   document.querySelectorAll('.sidebar-section-title').forEach(title => {
     title.addEventListener('click', () => {
@@ -3072,6 +3170,15 @@ document.addEventListener('DOMContentLoaded', () => {
       showToast('Código formatado');
     }
 
+    // Ctrl + H: Substituir no Editor
+    if (mod && e.key.toLowerCase() === 'h') {
+      e.preventDefault();
+      const cm = getCurrentCodeMirrorInstance();
+      if (cm && CodeMirror.commands.replace) CodeMirror.commands.replace(cm);
+      else showToast('Nenhum editor ativo para substituir ou funcionalidade de substituição não disponível.');
+    }
+
+
     // Ctrl + L: Limpar Console
     if (mod && e.key.toLowerCase() === 'l') {
       e.preventDefault();
@@ -3090,7 +3197,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Ctrl + B: Toggle Sidebar (Explorer)
     if (mod && e.key.toLowerCase() === 'b') {
       e.preventDefault();
-      toggleSidebar(); // Usa a função unificada
+      toggleSidebar();
     }
 
     // Ctrl + Tab: Ciclar entre arquivos abertos
@@ -3131,39 +3238,38 @@ document.addEventListener('DOMContentLoaded', () => {
   changeDevice(savedDevice, false);
   applyZoom(savedZoom, false);
 
-  // Restaurar Layout
-  const savedExplorerWidth = localStorage.getItem(EXPLORER_WIDTH_KEY);
+  // Restaurar Layout e Ordem das Abas
   const savedPanelsFlex = JSON.parse(localStorage.getItem(PANELS_FLEX_KEY) || 'null');
   const savedConsoleHeight = localStorage.getItem(CONSOLE_HEIGHT_KEY);
   const savedTabBarHeight = localStorage.getItem(TABBAR_HEIGHT_KEY);
   const savedTerminalHeight = localStorage.getItem(TERMINAL_HEIGHT_KEY);
   const savedTabWidths = JSON.parse(localStorage.getItem(TAB_WIDTHS_KEY) || '{}');
+  const savedTabOrder = JSON.parse(localStorage.getItem(TAB_ORDER_KEY) || '[]');
+  const lastActiveTabMode = localStorage.getItem('dx_studio_last_active_tab_mode');
 
-  // Restaura a largura da sidebar e o estado do ícone do explorador
-  const sidebar = $('#sidebar');
-  const explorerIcon = document.querySelector('.activity-bar i[title="Explorador"]');
-  if (sidebar && explorerIcon) {
-    if (savedExplorerWidth && savedExplorerWidth !== '0px') {
-      sidebar.style.width = savedExplorerWidth;
-      explorerIcon.classList.add('active');
-      if (resizerS) resizerS.style.display = 'block';
-    } else {
-      sidebar.style.width = '0px';
-      explorerIcon.classList.remove('active');
-      if (resizerS) resizerS.style.display = 'none';
-    }
-  }
   if (savedPanelsFlex) {
     $('.editorPanel').style.flex = savedPanelsFlex.editor;
     $('.previewPanel').style.flex = savedPanelsFlex.preview;
   }
   if (savedConsoleHeight && consoleEl) consoleEl.style.maxHeight = savedConsoleHeight;
   if (savedTabBarHeight && $('#tabBar')) $('#tabBar').style.height = savedTabBarHeight;
-  if (savedTerminalHeight && $('#terminalWrap')) $('#terminalWrap').style.height = savedTerminalHeight;
-  
+  if (savedTerminalHeight && $('#terminalWrap')) {
+    $('#terminalWrap').style.height = savedTerminalHeight;
+    $('#terminalWrap').dataset.lastHeight = savedTerminalHeight; // Salva para o toggle
+  }
+
+  // Restaura o estado da sidebar e da activity bar na inicialização
+  const sidebar = $('#sidebar');
+  const savedExplorerWidth = localStorage.getItem(EXPLORER_WIDTH_KEY);
+  const lastActiveActivityBarItem = localStorage.getItem(LAST_ACTIVE_ACTIVITY_BAR_ITEM_KEY);
+  if (sidebar) {
+    const shouldOpenSidebar = (savedExplorerWidth && parseFloat(savedExplorerWidth) > 0);
+    // Chama a função centralizada para configurar o estado inicial
+    toggleSidebar(shouldOpenSidebar, lastActiveActivityBarItem);
+  }
+
   appendTerminal('DX Studio Terminal - Pronto para comandos.', 'info');
   initMinimap();
-
   // Restaurar larguras das abas
   Object.keys(savedTabWidths).forEach(mode => {
     const tab = document.querySelector(`.tab[data-mode="${mode}"]`);
@@ -3173,48 +3279,38 @@ document.addEventListener('DOMContentLoaded', () => {
   updateSidebarFileList();
   renderRecentFiles();
 
-  // Restaurar a ordem das abas salvas
-  const savedTabOrder = JSON.parse(localStorage.getItem(TAB_ORDER_KEY) || '[]');
   if (savedTabOrder.length > 0) {
     const tabBar = $('#tabBar');
-    const fileEditorsWrap = $('#fileEditors');
-    const addTabBtn = $('#addTabBtn');
+    const existingTabs = Array.from(tabBar.querySelectorAll('.tab'));
+    const addTabButton = $('#addTabBtn');
 
-    // Mapeia elementos de aba e editor por seu data-mode/id para fácil acesso
     const tabElements = {};
-    const editorDivElements = {};
-
-    document.querySelectorAll('.tab').forEach(tab => {
+    existingTabs.forEach(tab => { // Mapeia as abas existentes
       tabElements[tab.dataset.mode] = tab;
     });
 
-    // Coleta todos os divs de editor (fixos e dinâmicos)
-    document.querySelectorAll('.fileEditors .singleEditor, #editor').forEach(editorDiv => {
-      editorDivElements[editorDiv.id] = editorDiv;
-    });
-    // Mapeia modos fixos para seus IDs de div de editor
-    editorDivElements['htmlmixed'] = document.getElementById('editorHtml');
-    editorDivElements['css'] = document.getElementById('editorCss');
-    editorDivElements['javascript'] = document.getElementById('editorJs');
-    editorDivElements['php'] = document.getElementById('editorPhp');
-    editorDivElements['python'] = document.getElementById('editorPy');
-    editorDivElements['settings'] = document.getElementById('editorSettings');
+    // Remove todas as abas existentes (exceto o botão de adicionar)
+    existingTabs.forEach(tab => tab.remove());
 
-    // Limpa a ordem atual para reconstruir
-    tabBar.innerHTML = '';
-    fileEditorsWrap.innerHTML = '';
-
+    // Re-apende as abas na ordem salva
     savedTabOrder.forEach(mode => {
-      const tab = tabElements[mode];
-      const editorDiv = editorDivElements[mode] || editorDivElements[getEditorPanelIdFromMode(mode)]; // Tenta por mode, depois por mapeamento fixo
-      if (tab && editorDiv) {
+      const tab = tabElements[mode]; // Pega a referência da aba mapeada
+      if (tab) { // Se a aba existir, adiciona-a de volta
         tabBar.appendChild(tab);
-        fileEditorsWrap.appendChild(editorDiv);
       }
     });
-    // Garante que o botão de adicionar aba esteja sempre no final
-    if (addTabBtn) tabBar.appendChild(addTabBtn);
+    // Garante que o botão de adicionar aba esteja sempre no final, se existir
+    if (addTabButton) tabBar.appendChild(addTabButton);
   }
+
+  // Ativa a última aba salva ou a aba padrão
+  let initialActiveMode = 'htmlmixed';
+  if (lastActiveTabMode && document.querySelector(`.tab[data-mode="${lastActiveTabMode}"]`)) {
+    initialActiveMode = lastActiveTabMode;
+  } else if (savedTabOrder.length > 0) {
+    initialActiveMode = savedTabOrder[0];
+  }
+  switchTab(initialActiveMode);
 
   // Diagnóstico de LocalStorage (Verificação de variáveis)
   console.group('%c DX Studio - Debug System ', 'background: #7c5cff; color: #fff; border-radius: 4px; padding: 2px;');
