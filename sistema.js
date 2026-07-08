@@ -3050,7 +3050,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (lineMatch) {
         const reportedLine = parseInt(lineMatch[1]);
         actualJsLine = reportedLine - lastJsOffset;
-        if (actualJsLine > 0 && targetEditor) {
+        // Adiciona uma verificação de limite para garantir que a linha calculada exista no editor
+        if (actualJsLine > 0 && targetEditor && actualJsLine <= targetEditor.lineCount()) {
           // Adiciona à lista de navegação
           errorNavigationList.push({
             editor: targetEditor,
